@@ -11,6 +11,7 @@
   --glass: rgba(255, 255, 255, .62);
   --glass-strong: rgba(255, 255, 255, .78);
   --sheet: rgba(240, 243, 248, .94); /* fondo de las hojas: casi opaco, deja ver apenas la página de atrás */
+  --statusbar: linear-gradient(rgba(11, 18, 32, .55), rgba(11, 18, 32, .35)); /* detrás de la hora (blanca) */
   --glass-border: rgba(15, 23, 42, .07);
   --highlight: rgba(255, 255, 255, .9); /* filo de luz en el borde de arriba del vidrio */
   --field: rgba(255, 255, 255, .72);
@@ -43,6 +44,7 @@
     --glass: rgba(24, 27, 36, .62);
     --glass-strong: rgba(18, 20, 28, .76);
     --sheet: rgba(10, 12, 18, .94);
+    --statusbar: rgba(0, 0, 0, .25);
     --glass-border: rgba(255, 255, 255, .08);
     --highlight: rgba(255, 255, 255, .06);
     --field: rgba(255, 255, 255, .06);
@@ -86,6 +88,13 @@ body {
 }
 /* Brillo de fondo fijo (background-attachment: fixed no funciona en iOS) */
 body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--aurora); }
+/* La app va de borde a borde, también debajo de la barra de estado (hora, batería: siempre en blanco en iOS).
+   Detrás de la hora, una franja de vidrio para que lo que scrollea por debajo no se mezcle con ella; en modo claro
+   es más oscura para que la hora blanca se lea. En la compu (sin barra de estado) mide 0. */
+body::after {
+  content: ""; position: fixed; z-index: 13; top: 0; left: 0; right: 0; height: env(safe-area-inset-top); pointer-events: none;
+  background: var(--statusbar); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+}
 main {
   max-width: 640px;
   margin: 0 auto;
@@ -220,15 +229,18 @@ input:focus-visible, select:focus-visible { outline: 2px solid transparent; bord
 
 /* Tarjetas grandes en carrusel (Mis tarjetas y medio de pago): se deslizan con el dedo (scroll-snap nativo) y la siguiente asoma */
 .carousel {
+  --card-w: min(86%, 360px); /* ancho de cada tarjeta (el % es del ancho del carrusel) */
   display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
-  margin: 0 -16px; padding: 6px 16px 18px; scrollbar-width: none;
+  margin: 0 -16px; padding: 6px 0 18px; scrollbar-width: none;
 }
 .carousel::-webkit-scrollbar { display: none; }
+/* Espacio a cada costado (media pantalla menos media tarjeta): así también la primera, la última o una sola tarjeta quedan centradas */
+.carousel::before, .carousel::after { content: ""; flex: 0 0 calc((100% - var(--card-w)) / 2 - 14px); }
 .carousel .empty { flex: 1; }
 /* Color del banco con un reflejo metálico arriba a la izquierda */
 .bank-card {
   --card: #555555; --card-ink: #ffffff;
-  flex: 0 0 86%; max-width: 360px; aspect-ratio: 1.586; scroll-snap-align: center; scroll-snap-stop: always;
+  flex: 0 0 var(--card-w); aspect-ratio: 1.586; scroll-snap-align: center; scroll-snap-stop: always;
   display: flex; flex-direction: column; justify-content: space-between; position: relative; margin: 0; padding: 20px 22px;
   background: linear-gradient(135deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, 0) 42%), var(--card);
   color: var(--card-ink); border: 1px solid rgba(255, 255, 255, .14); border-radius: 5.5px;
@@ -244,7 +256,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid transparent; bord
 .net { align-self: flex-end; font-size: 1.35em; font-weight: 700; font-style: italic; }
 .bank-card.cash { background: var(--glass); color: var(--ink); border: 1.5px dashed var(--muted); box-shadow: none; justify-content: center; text-align: center; }
 /* Medio de pago: tarjetas algo más angostas (asoman más las vecinas); la del centro es la elegida y las otras se atenúan */
-#card-picker .bank-card { flex-basis: 80%; }
+#card-picker { --card-w: min(80%, 360px); }
 #card-picker input { position: absolute; opacity: 0; pointer-events: none; }
 #card-picker .bank-card:not(:has(:checked)) { opacity: .5; }
 #card-picker .bank-card:has(:focus-visible) { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
