@@ -1,7 +1,7 @@
 import { loadAll, put, del, save, write } from './db.js';
 import {
   today, ym, addMonths, money, parseMonto, cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, sum,
-  REDES, MONEDAS, checkCard, checkTx, cleanBackup, savingsByCategory, checkSaving, newId, byDateDesc, cashWithdrawal, fromAccount, formatMontoTexto,
+  REDES, MONEDAS, checkCard, checkTx, cleanBackup, savingsByCategory, checkSaving, newId, byDateDesc, cashWithdrawal, fromAccount, formatMontoTexto, monthSplit,
 } from './calc.js';
 import { sampleData } from './sample.js';
 
@@ -168,7 +168,13 @@ const views = {
   inicio() {
     const cur = ym(today());
     $('#inicio-mes').textContent = monthName(cur);
-    porMoneda('#inicio-total', m => monthTotal(txs, cur, m), usadas(txs.filter(t => shareInMonth(t, cur))));
+    const enMes = txs.filter(t => shareInMonth(t, cur)), monedas = usadas(enMes);
+    porMoneda('#inicio-total', m => monthTotal(txs, cur, m), monedas);
+    // Debajo: cuánto fue con tarjeta de crédito y cuánto salió de la cuenta (efectivo / transferencia / débito)
+    const parte = key => (monedas.length ? monedas : ['ARS']).map(m => money(monthSplit(txs, cards, cur, m)[key], m)).join(' · ');
+    $('#inicio-split').hidden = !enMes.length;
+    $('#inicio-tarjeta').textContent = parte('tarjeta');
+    $('#inicio-cuenta').textContent = parte('cuenta');
     categoryChart('chart-inicio', cur, true);
   },
 

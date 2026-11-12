@@ -1,6 +1,6 @@
 // Precachea la app al instalar. Después: responde desde caché (funciona offline) y actualiza en segundo plano,
 // así un deploy nuevo aparece la próxima vez que abrís la app. Si agregás un archivo, sumalo a FILES y subí CACHE.
-const CACHE = 'finanzas-v31';
+const CACHE = 'finanzas-v32';
 const FILES = [
   './', './index.html', './styles.css', './app.js', './calc.js', './db.js', './sample.js', './manifest.json',
   './vendor/chart.umd.min.js', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',

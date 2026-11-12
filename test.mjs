@@ -1,6 +1,6 @@
 // Self-check de calc.js: node test.mjs
 import assert from 'node:assert/strict';
-import { cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, parseMonto, cleanBackup, addMonths, sum, savingsByCategory, newId, byDateDesc, cashWithdrawal, checkSaving, fromAccount, formatMontoTexto } from './calc.js';
+import { cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, parseMonto, cleanBackup, addMonths, sum, savingsByCategory, newId, byDateDesc, cashWithdrawal, checkSaving, fromAccount, formatMontoTexto, monthSplit } from './calc.js';
 import { sampleData } from './sample.js';
 
 const t = { id: 'a', monto: 1000, moneda: 'ARS', descripcion: 'Heladera', categoria: 'Hogar', fecha: '2026-11-20', cardId: null, cuotas: 3 };
@@ -52,6 +52,16 @@ assert.equal(cleanBackup({ cards: [{ ...card, tipo: 'prepaga' }], transactions: 
 // De dónde sale la plata: efectivo y débito, de la cuenta; crédito y tarjeta borrada, no
 const tarjetas = [{ id: 'cred', tipo: 'credito' }, { id: 'deb', tipo: 'debito' }, { id: 'vieja' }];
 assert.deepEqual([null, 'deb', 'cred', 'vieja', 'borrada'].map(cardId => fromAccount({ cardId }, tarjetas)), [true, true, false, false, false]);
+// Gasto del mes partido: tarjeta de crédito vs. efectivo/débito; las cuotas cuentan su parte del mes y todo suma el total
+const mes = [
+  { ...t, id: 'p1', cardId: 'cred', monto: 900, cuotas: 3 },   // 300 este mes, con tarjeta
+  { ...t, id: 'p2', cardId: 'deb', monto: 150.5, cuotas: 1 },  // débito: de la cuenta
+  { ...t, id: 'p3', cardId: null, monto: 49.5, cuotas: 1 },    // efectivo: de la cuenta
+  { ...t, id: 'p4', cardId: 'cred', monto: 70, cuotas: 1, moneda: 'USD' }, // otra moneda: no se mezcla
+];
+assert.deepEqual(monthSplit(mes, tarjetas, '2026-11'), { tarjeta: 300, cuenta: 200 });
+assert.equal(sum(Object.values(monthSplit(mes, tarjetas, '2026-11'))), monthTotal(mes, '2026-11'));
+assert.deepEqual(monthSplit(mes, tarjetas, '2026-11', 'USD'), { tarjeta: 70, cuenta: 0 });
 assert.equal(cleanBackup({ cards: [{ ...card, ultimos4: '45210' }], transactions: [] }), null);
 assert.equal(cleanBackup({ cards: [], transactions: [{ ...t, monto: -1 }] }), null);
 assert.equal(cleanBackup({ cards: [null], transactions: [] }), null);

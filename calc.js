@@ -18,6 +18,12 @@ export const shareInMonth = (t, m) => { const i = monthDiff(ym(t.fecha), m); ret
 // Pesos y dólares no se suman: cada total es de una moneda (las pantallas muestran un renglón por moneda).
 // shortcut: los gráficos (por categoría y por mes) muestran solo pesos; sumar dólares necesita una cotización.
 export const monthTotal = (txs, m, moneda = 'ARS') => sum(txs.filter(t => t.moneda === moneda).map(t => shareInMonth(t, m)));
+// El gasto del mes partido en dos: con tarjeta de crédito, y lo que salió de la cuenta (efectivo / transferencia / débito).
+// Las dos partes suman el total del mes.
+export const monthSplit = (txs, cards, m, moneda = 'ARS') => {
+  const parte = deLaCuenta => monthTotal(txs.filter(t => fromAccount(t, cards) === deLaCuenta), m, moneda);
+  return { tarjeta: parte(false), cuenta: parte(true) };
+};
 
 function groupSum(items, value, moneda = 'ARS') {
   const acc = {};
