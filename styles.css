@@ -1,0 +1,355 @@
+/* Diseño: iOS (títulos grandes, tab bar, controles segmentados) + "sci-fi minimal": vidrio esmerilado sobre
+   negro OLED (oscuro) o gris espacial (claro), brillos azul neón apagado y cian, texto plata.
+   Contraste medido sobre el vidrio en su peor caso: todo el texto da 4,5:1 o más.
+   El acento como relleno (--accent-grad) siempre lleva --on-accent encima; como texto o borde se usa --accent. */
+:root {
+  color-scheme: light dark;
+  --bg: #eef1f6;
+  --aurora: radial-gradient(90% 55% at 0% -10%, rgba(64, 120, 255, .20), transparent 70%),
+            radial-gradient(70% 45% at 100% 5%, rgba(0, 190, 255, .14), transparent 70%),
+            radial-gradient(80% 50% at 50% 115%, rgba(140, 160, 190, .22), transparent 70%);
+  --glass: rgba(255, 255, 255, .62);
+  --glass-strong: rgba(255, 255, 255, .78);
+  --sheet: rgba(240, 243, 248, .94); /* fondo de las hojas: casi opaco, deja ver apenas la página de atrás */
+  --glass-border: rgba(15, 23, 42, .07);
+  --highlight: rgba(255, 255, 255, .9); /* filo de luz en el borde de arriba del vidrio */
+  --field: rgba(255, 255, 255, .72);
+  --solid: #ffffff; /* opciones de los desplegables y globos de los gráficos */
+  --ink: #0b1220;
+  --ink-2: #4b5567;
+  --muted: #5d6677;
+  --line: rgba(15, 23, 42, .08);
+  --grid: rgba(15, 23, 42, .07);
+  --axis: rgba(15, 23, 42, .16);
+  --accent: #1a52e6;
+  --accent-grad: linear-gradient(135deg, #2a62ff, #1677c9);
+  --on-accent: #ffffff;
+  --glow: rgba(42, 98, 255, .28);
+  --metal: linear-gradient(180deg, #0b1220 30%, #46557a);
+  --series: #2a62ff;
+  --series-soft: #b9cbff;
+  --chart-glow: none;
+  --good: #0b6e43;
+  --bad: #b8302f;
+  --shadow: 0 14px 34px -18px rgba(20, 40, 90, .35);
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --aurora: radial-gradient(90% 55% at 0% -10%, rgba(64, 110, 255, .24), transparent 70%),
+              radial-gradient(70% 45% at 100% 5%, rgba(0, 200, 255, .13), transparent 70%),
+              radial-gradient(80% 50% at 50% 115%, rgba(120, 140, 170, .10), transparent 70%);
+    --glass: rgba(24, 27, 36, .62);
+    --glass-strong: rgba(18, 20, 28, .76);
+    --sheet: rgba(10, 12, 18, .94);
+    --glass-border: rgba(255, 255, 255, .08);
+    --highlight: rgba(255, 255, 255, .06);
+    --field: rgba(255, 255, 255, .06);
+    --solid: #15171e;
+    --ink: #f2f5fa;
+    --ink-2: #a7b0bf;
+    --muted: #7d8798;
+    --line: rgba(255, 255, 255, .08);
+    --grid: rgba(255, 255, 255, .07);
+    --axis: rgba(255, 255, 255, .16);
+    --accent: #4cc9ff;
+    --accent-grad: linear-gradient(135deg, #5b8cff, #3fd5ff);
+    --on-accent: #04101f;
+    --glow: rgba(63, 213, 255, .35);
+    --metal: linear-gradient(180deg, #ffffff 30%, #9fb2cf);
+    --series: #3fd5ff;
+    --series-soft: #2a4a80;
+    --chart-glow: drop-shadow(0 0 6px rgba(63, 213, 255, .35));
+    --good: #4ade80;
+    --bad: #ff7b8a;
+    --shadow: 0 16px 40px -20px rgba(0, 0, 0, .9);
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html {
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation; /* sin zoom por doble toque */
+  scroll-padding: calc(env(safe-area-inset-top) + 64px) 0 calc(env(safe-area-inset-bottom) + 96px); /* lo enfocado no queda bajo "Atrás" ni el "+" */
+}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.45 -apple-system, "SF Pro Text", Inter, system-ui, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Brillo de fondo fijo (background-attachment: fixed no funciona en iOS) */
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--aurora); }
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 16px)
+           calc(env(safe-area-inset-bottom) + 110px) calc(env(safe-area-inset-left) + 16px);
+}
+
+/* Tipografía: título grande de iOS; rótulos de sección chicos, en mayúsculas y espaciados */
+h1 { font-size: 34px; font-weight: 700; letter-spacing: -.025em; line-height: 1.1; margin: 12px 64px 20px 4px; /* a la derecha va el botón Atrás */ text-wrap: balance; }
+h2 { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 12px; }
+.section-title { margin: 32px 4px 10px; }
+.muted { color: var(--ink-2); }
+.hint { font-size: 14px; margin: -6px 4px 14px; }
+
+/* Vidrio esmerilado: tarjetas y resúmenes (la tab bar tiene el suyo) */
+.box, .stat {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(160%); backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
+}
+.box { border-radius: 5px; padding: 18px; margin-bottom: 16px; }
+
+.hero { padding: 4px 4px 24px; }
+.hero p { margin: 0; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+/* Montos grandes: trazo fino con degradé plateado */
+.big {
+  font-size: 46px; font-weight: 300; letter-spacing: -.035em; line-height: 1.12;
+  color: var(--ink); background: var(--metal); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.big span { display: block; }
+.big span + span { font-size: .6em; font-weight: 400; }
+
+.chart-wrap { position: relative; height: 220px; }
+.chart-wrap canvas { filter: var(--chart-glow); }
+
+/* Listas de movimientos */
+.list { list-style: none; margin: 0; padding: 0; }
+.item {
+  display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 10px 0;
+  color: inherit; text-decoration: none; border-bottom: 1px solid var(--line);
+}
+.list li:last-child .item { border-bottom: 0; }
+/* Listas largas (Ahorros crece con cada gasto en efectivo): el navegador no dibuja las filas que no se ven */
+.list > li { content-visibility: auto; contain-intrinsic-size: auto 58px; }
+.grow { flex: 1; min-width: 0; }
+.item b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item small { display: block; font-size: 13px; color: var(--ink-2); }
+.amt { text-align: right; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dot { flex: none; width: 4px; height: 30px; border-radius: 1px; background: var(--muted); }
+.empty { color: var(--ink-2); text-align: center; padding: 20px 0; }
+progress {
+  display: block; width: 100%; height: 4px; margin: 8px 0 4px; border: 0; border-radius: 1px;
+  appearance: none; -webkit-appearance: none; background: var(--grid); overflow: hidden;
+}
+progress::-webkit-progress-bar { background: var(--grid); }
+progress::-webkit-progress-value { background: var(--accent-grad); border-radius: 1px; }
+progress::-moz-progress-bar { background: var(--accent-grad); }
+
+/* Resúmenes */
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.stat { border-radius: 5px; padding: 14px 16px; }
+.stat span { display: block; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.stat strong { display: block; font-size: 22px; font-weight: 500; margin-top: 4px; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.stat strong.long { font-size: 18px; } /* montos de 8+ dígitos: entran en media pantalla */
+.stat strong span { display: block; }
+.stat strong span + span { font-size: .78em; color: var(--ink-2); } /* el renglón en dólares, debajo del de pesos */
+.up { color: var(--bad); }
+.down { color: var(--good); }
+.in { color: var(--good); }
+.cmp { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.cmp th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); padding: 6px 0; }
+.cmp td { padding: 9px 0; border-top: 1px solid var(--line); }
+.cmp th:not(:first-child), .cmp td:not(:first-child) { text-align: right; }
+
+/* Formularios: 17px evita el zoom automático de iOS al enfocar */
+fieldset { border: 0; padding: 0; margin: 0 0 12px; min-width: 0; }
+legend { font-size: 13px; font-weight: 500; color: var(--ink-2); padding: 0; margin: 0 4px 6px; }
+label { display: block; font-size: 13px; font-weight: 500; color: var(--ink-2); margin-bottom: 14px; }
+input, select {
+  display: block; width: 100%; height: 50px; margin-top: 6px; padding: 0 14px;
+  font: inherit; font-size: 17px; color: var(--ink); background-color: var(--field);
+  border: 1px solid var(--glass-border); border-radius: 3.5px; appearance: none; -webkit-appearance: none;
+}
+::placeholder { color: var(--muted); opacity: 1; }
+option { background: var(--solid); color: var(--ink); }
+/* Flecha del desplegable (appearance: none la saca); usa el color del tema */
+select {
+  padding-right: 40px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-2) 50%), linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+  background-position: calc(100% - 22px) 50%, calc(100% - 16px) 50%;
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
+}
+input[type=date] { line-height: 50px; }
+input[type=date]::-webkit-date-and-time-value { text-align: left; } /* iOS la centra */
+input[type=color] { padding: 4px; }
+input[name=monto] { height: 66px; font-size: 34px; font-weight: 300; letter-spacing: -.02em; }
+/* Monto con la moneda a la izquierda ($ARS / $USD), a la misma altura que el campo */
+.monto-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 14px; }
+.monto-row > label { flex: 1; min-width: 0; margin: 0; }
+.seg.moneda { flex: none; width: 128px; margin: 0; }
+.seg.moneda span { height: 56px; font-size: 14px; letter-spacing: .02em; }
+/* Foco: anillo luminoso. El outline transparente sigue apareciendo en el modo de alto contraste. */
+input:focus-visible, select:focus-visible { outline: 2px solid transparent; border-color: var(--accent); box-shadow: 0 0 0 4px var(--glow); }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; min-width: 0; }
+.btn {
+  display: flex; align-items: center; justify-content: center; width: 100%; min-height: 52px; margin-bottom: 12px;
+  font: inherit; font-size: 17px; font-weight: 600; color: var(--ink); background: var(--glass);
+  border: 1px solid var(--glass-border); border-radius: 4px; box-shadow: inset 0 1px 0 var(--highlight);
+  cursor: pointer; position: relative; text-decoration: none;
+}
+.btn.primary {
+  background: var(--accent-grad); color: var(--on-accent); border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 10px 28px -10px var(--glow);
+}
+.btn.danger { color: var(--bad); }
+.file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+/* Respuesta al tocar: se achica apenas, como en iOS. Solo se animan transform y opacity. */
+:is(.btn, .fab, .item[href], .bank-card, .menu-row, .cat-link, .back, .tile) { transition: transform .25s var(--ease), opacity .25s var(--ease); }
+:is(.btn, .fab, .item[href], .bank-card, .menu-row, .cat-link, .back:enabled, .tile):active { transform: scale(.97); opacity: .75; }
+/* Al pasar el mouse (compu) se marca más, no menos: borde de acento en el vidrio, un poco más de brillo en lo de color */
+@media (hover: hover) {
+  :is(.btn:not(.primary), .menu-row, .cat-link, .back:enabled):hover, .tile:hover svg { border-color: var(--accent); }
+  :is(.btn.primary, .fab, .bank-card):hover { filter: brightness(1.08); }
+  .item[href]:hover b { color: var(--accent); }
+  .dots button:hover::before { opacity: .8; }
+}
+
+/* Tarjetas grandes en carrusel (Mis tarjetas y medio de pago): se deslizan con el dedo (scroll-snap nativo) y la siguiente asoma */
+.carousel {
+  display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
+  margin: 0 -16px; padding: 6px 16px 18px; scrollbar-width: none;
+}
+.carousel::-webkit-scrollbar { display: none; }
+.carousel .empty { flex: 1; }
+/* Color del banco con un reflejo metálico arriba a la izquierda */
+.bank-card {
+  --card: #555555; --card-ink: #ffffff;
+  flex: 0 0 86%; max-width: 360px; aspect-ratio: 1.586; scroll-snap-align: center; scroll-snap-stop: always;
+  display: flex; flex-direction: column; justify-content: space-between; position: relative; margin: 0; padding: 20px 22px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, 0) 42%), var(--card);
+  color: var(--card-ink); border: 1px solid rgba(255, 255, 255, .14); border-radius: 5.5px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 26px 40px -22px rgba(0, 0, 0, .75);
+  font: inherit; font-size: 18px; text-align: left; cursor: pointer; text-decoration: none;
+}
+.top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.bank { font-weight: 600; }
+.top .bank { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* un banco largo no tapa "Débito" */
+.tipo { font-size: .62em; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; opacity: .85; }
+.num { font-size: 1.15em; letter-spacing: .16em; font-variant-numeric: tabular-nums; }
+.num::before { content: "•••• •••• "; } /* solo dibujo: se guardan únicamente los últimos 4 */
+.net { align-self: flex-end; font-size: 1.35em; font-weight: 700; font-style: italic; }
+.bank-card.cash { background: var(--glass); color: var(--ink); border: 1.5px dashed var(--muted); box-shadow: none; justify-content: center; text-align: center; }
+/* Medio de pago: tarjetas algo más angostas (asoman más las vecinas); la del centro es la elegida y las otras se atenúan */
+#card-picker .bank-card { flex-basis: 80%; }
+#card-picker input { position: absolute; opacity: 0; pointer-events: none; }
+#card-picker .bank-card:not(:has(:checked)) { opacity: .5; }
+#card-picker .bank-card:has(:focus-visible) { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+/* Puntos: cuál tarjeta estás viendo; tocarlos también cambia de tarjeta (alternativa al deslizamiento) */
+.dots { display: flex; justify-content: center; margin: -6px 0 14px; }
+.dots button { width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; }
+.dots button::before { content: ""; display: block; width: 8px; height: 8px; margin: auto; border-radius: 50%; background: var(--muted); opacity: .4; }
+.dots button[aria-current]::before { background: var(--accent); opacity: 1; box-shadow: 0 0 8px var(--glow); }
+/* Acciones debajo del carrusel: ícono en un cuadrado de vidrio con el texto abajo */
+.tiles { display: flex; justify-content: center; gap: 28px; margin-bottom: 20px; }
+.tile { width: 76px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink); cursor: pointer; text-decoration: none; }
+.tile svg {
+  box-sizing: content-box; width: 26px; height: 26px; padding: 21px; border-radius: 5.5px; color: var(--accent);
+  background: var(--glass); border: 1px solid var(--glass-border); box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
+  fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* Página principal: el total del mes y, a su derecha, el gasto por categoría */
+.resumen { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-bottom: 16px; }
+.resumen:has(#inicio-cat-box[hidden]) { grid-template-columns: 1fr; }
+.resumen .box { margin: 0; padding: 14px; }
+.resumen .hero { display: flex; flex-direction: column; justify-content: center; container-type: inline-size; }
+.resumen .eyebrow { font-size: 11px; letter-spacing: .12em; }
+.resumen .hero .muted { font-size: 13px; }
+/* "Por categoría" se toca para abrir el detalle: flechita junto al título, como las filas de menú */
+.cat-link { display: block; color: inherit; text-decoration: none; }
+.cat-link h2 { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.cat-link h2::after { content: ""; flex: none; width: 6px; height: 6px; border-top: 2px solid var(--ink-2); border-right: 2px solid var(--ink-2); transform: rotate(45deg); }
+.cat-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sheet-sub { margin: -12px 4px 14px; }
+/* El total se achica con el ancho de su recuadro para entrar entero (cqi = % del ancho del recuadro) */
+.resumen .big { font-size: clamp(17px, 15.5cqi, 38px); font-weight: 700; } /* en negrita es más ancho: margen para SF Pro */
+.resumen .big.long { font-size: clamp(14px, 12.5cqi, 32px); }
+
+/* Menús: filas de vidrio con ícono; cada una abre su hoja encima de la página */
+.menus { display: grid; gap: 10px; }
+.menu-row {
+  display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 0 18px;
+  color: inherit; text-decoration: none; font-size: 18px; font-weight: 600; letter-spacing: -.01em;
+  background: var(--glass); -webkit-backdrop-filter: blur(24px) saturate(160%); backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--glass-border); border-radius: 5px; box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
+}
+.menu-row::after { content: ""; margin-left: auto; width: 8px; height: 8px; border-top: 2px solid var(--ink-2); border-right: 2px solid var(--ink-2); transform: rotate(45deg); }
+.menu-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ico { flex: none; width: 24px; height: 24px; fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Hojas: cada menú se abre encima de la app, subiendo desde abajo como en iOS; la página de atrás se achica y se apaga */
+.sheet {
+  position: fixed; z-index: 11; inset: calc(env(safe-area-inset-top) + 8px) 0 0; max-width: 640px; margin: 0 auto;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 4px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 110px) calc(env(safe-area-inset-left) + 16px);
+  scroll-padding: 56px 0 96px; /* lo enfocado no queda bajo "Atrás" ni el "+" */
+  background: var(--sheet); -webkit-backdrop-filter: blur(30px) saturate(160%); backdrop-filter: blur(30px) saturate(160%);
+  border: 1px solid var(--glass-border); border-bottom: 0; border-radius: 6px 6px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, .35);
+  animation: sheet-up .42s var(--ease);
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+#pagina { transform-origin: 50% 0; transition: transform .42s var(--ease), opacity .42s var(--ease); }
+body:has(.sheet:not([hidden])) { overflow: hidden; }
+body:has(.sheet:not([hidden])) #pagina { transform: scale(.94); opacity: .4; }
+
+/* Botón Atrás: siempre visible arriba a la derecha, también sobre las hojas (apagado en la página principal) */
+.back {
+  position: fixed; z-index: 12; top: calc(env(safe-area-inset-top) + 12px); right: max(16px, env(safe-area-inset-right));
+  /* Círculo de vidrio oscuro con borde fino y solo la flecha (44 px: el mínimo cómodo para tocar en iOS) */
+  display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  color: var(--ink);
+  background: var(--glass-strong); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--axis); box-shadow: inset 0 1px 0 var(--highlight), var(--shadow); cursor: pointer;
+}
+.back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.back:disabled { opacity: .35; cursor: default; }
+
+/* Botón flotante "Nuevo gasto" (se oculta en el propio formulario) */
+.fab {
+  position: fixed; z-index: 11; right: max(16px, env(safe-area-inset-right));
+  bottom: max(20px, calc(env(safe-area-inset-bottom) + 10px));
+  display: flex; align-items: center; justify-content: center; width: 58px; height: 58px; border-radius: 50%;
+  background: var(--accent-grad); color: var(--on-accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 12px 30px -8px var(--glow), 0 0 24px -6px var(--glow);
+}
+.fab svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+body[data-view=nuevo] .fab { display: none; }
+
+/* Control segmentado (Guardé/Saqué, Pesos/Dólares): la "perilla" se desliza hasta la opción elegida */
+.seg {
+  position: relative; isolation: isolate; display: flex; padding: 4px; margin-bottom: 14px;
+  background: var(--field); border: 1px solid var(--glass-border); border-radius: 3.5px;
+}
+.seg::before {
+  content: ""; position: absolute; z-index: -1; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px);
+  border-radius: 2px; background: var(--accent-grad); box-shadow: 0 6px 18px -6px var(--glow);
+  transition: transform .35s var(--ease);
+}
+.seg:has(label:last-of-type :checked)::before { transform: translateX(100%); }
+.seg label { flex: 1; margin: 0; position: relative; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: flex; align-items: center; justify-content: center; height: 40px; border-radius: 2px; font-size: 15px; font-weight: 600; color: var(--ink-2); }
+.seg input:checked + span { color: var(--on-accent); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Entrada suave de cada pantalla y formulario. Solo transform: la opacidad cortaría el desenfoque del vidrio. */
+@keyframes rise { from { transform: translateY(14px); } }
+form.box:not([hidden]) { animation: rise .45s var(--ease); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { animation: none !important; transition: none !important; }
+}

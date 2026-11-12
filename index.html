@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Finanzas</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#eef1f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Finanzas">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+  <script src="vendor/chart.umd.min.js" defer></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+<button class="back" type="button" id="atras" aria-label="Atrás" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg></button>
+
+<main>
+  <!-- Página principal: el resumen del mes y la lista de menús. Cada menú se abre como una hoja encima. -->
+  <div id="pagina">
+    <h1>Finanzas</h1>
+    <div class="resumen">
+      <header class="box hero">
+        <p class="eyebrow" id="inicio-mes"></p>
+        <p class="big" id="inicio-total"></p>
+        <p class="muted">gastado este mes</p>
+      </header>
+      <a class="box cat-link" id="inicio-cat-box" href="#categorias" aria-label="Ver el gasto del mes por categoría">
+        <h2>Por categoría</h2>
+        <div class="chart-wrap"><canvas id="chart-inicio" role="img" aria-label="Gasto del mes por categoría"></canvas></div>
+      </a>
+    </div>
+    <nav class="menus" aria-label="Menús">
+      <a class="menu-row" href="#movimientos"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Últimos movimientos</a>
+      <a class="menu-row" href="#cuotas"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Cuotas</a>
+      <a class="menu-row" href="#ahorros"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>Ahorros</a>
+      <a class="menu-row" href="#historial"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M12 20V5M19 20v-5"/></svg>Historial</a>
+      <a class="menu-row" href="#tarjetas"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Tarjetas</a>
+    </nav>
+  </div>
+
+  <!-- Hojas: se abren encima de la página (una sola a la vez) y se cierran con "Atrás" -->
+  <section class="sheet" data-view="movimientos" role="dialog" aria-modal="true" aria-labelledby="h-movimientos" hidden>
+    <h1 id="h-movimientos" tabindex="-1">Últimos movimientos</h1>
+    <div class="box"><ul class="list" id="movimientos-lista"></ul></div>
+  </section>
+
+  <section class="sheet" data-view="categorias" role="dialog" aria-modal="true" aria-labelledby="h-categorias" hidden>
+    <h1 id="h-categorias" tabindex="-1">Por categoría</h1>
+    <p class="eyebrow sheet-sub" id="cat-mes"></p>
+    <div class="box">
+      <div class="chart-wrap"><canvas id="chart-cat" role="img" aria-label="Gasto del mes por categoría"></canvas></div>
+      <table class="cmp">
+        <thead><tr><th>Categoría</th><th>Monto</th><th>vs ant.</th></tr></thead>
+        <tbody id="cat-tabla"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="sheet" data-view="cuotas" role="dialog" aria-modal="true" aria-labelledby="h-cuotas" hidden>
+    <h1 id="h-cuotas" tabindex="-1">Cuotas</h1>
+    <div class="stats">
+      <div class="stat"><span>A pagar este mes</span><strong id="cuotas-mes"></strong></div>
+      <div class="stat"><span>Pendiente total</span><strong id="cuotas-total"></strong></div>
+    </div>
+    <div class="box"><ul class="list" id="cuotas-lista"></ul></div>
+  </section>
+
+  <section class="sheet" data-view="ahorros" role="dialog" aria-modal="true" aria-labelledby="h-ahorros" hidden>
+    <h1 id="h-ahorros" tabindex="-1">Ahorros</h1>
+    <header class="hero">
+      <p class="big" id="ahorros-total"></p>
+      <p class="muted">ahorrado en total</p>
+    </header>
+    <div class="box">
+      <h2>Por categoría</h2>
+      <ul class="list" id="ahorros-cats"></ul>
+    </div>
+    <a class="btn" id="ahorro-nuevo" href="#ahorros/nuevo">Agregar ahorro</a>
+    <form id="ahorro-form" class="box" autocomplete="off" hidden>
+      <h2 id="ahorro-titulo">Nuevo ahorro</h2>
+      <fieldset class="seg">
+        <legend class="sr-only">Tipo de movimiento</legend>
+        <label><input type="radio" name="tipo" value="in" checked><span>Guardé</span></label>
+        <label><input type="radio" name="tipo" value="out"><span>Saqué</span></label>
+      </fieldset>
+      <fieldset class="seg">
+        <legend class="sr-only">Moneda</legend>
+        <label><input type="radio" name="moneda" value="ARS" checked><span>Pesos ($)</span></label>
+        <label><input type="radio" name="moneda" value="USD"><span>Dólares (US$)</span></label>
+      </fieldset>
+      <label>Monto <input name="monto" inputmode="decimal" placeholder="$ 0" required></label>
+      <label>Categoría <input name="categoria" list="ahorro-sugeridas" maxlength="40" placeholder="Ej.: Futuro viaje…" required></label>
+      <datalist id="ahorro-sugeridas"></datalist>
+      <label>Nota (opcional) <input name="descripcion" maxlength="80"></label>
+      <label>Fecha <input type="date" name="fecha" min="2000-01-01" required></label>
+      <div class="row">
+        <button class="btn" type="button" id="ahorro-cancelar">Cancelar</button>
+        <button class="btn primary" type="submit">Guardar ahorro</button>
+      </div>
+      <button class="btn danger" type="button" id="ahorro-borrar" hidden>Borrar movimiento</button>
+    </form>
+    <div class="box">
+      <h2>Movimientos</h2>
+      <ul class="list" id="ahorros-lista"></ul>
+    </div>
+  </section>
+
+  <section class="sheet" data-view="historial" role="dialog" aria-modal="true" aria-labelledby="h-historial" hidden>
+    <h1 id="h-historial" tabindex="-1">Historial</h1>
+    <div class="box">
+      <h2>Gasto por mes</h2>
+      <div class="chart-wrap"><canvas id="chart-meses" role="img" aria-label="Gasto total de los últimos 12 meses. Tocá un mes para ver el detalle."></canvas></div>
+    </div>
+    <label>Ver mes <select id="hist-mes"></select></label>
+    <div class="stats">
+      <div class="stat"><span>Total del mes</span><strong id="hist-total"></strong></div>
+      <div class="stat"><span id="hist-prev-label">vs mes anterior</span><strong id="hist-delta"></strong></div>
+    </div>
+    <div class="box" id="hist-cat-box">
+      <h2>Por categoría</h2>
+      <div class="chart-wrap"><canvas id="chart-hist-cat" role="img" aria-label="Gasto del mes por categoría"></canvas></div>
+      <table class="cmp">
+        <thead><tr><th>Categoría</th><th>Monto</th><th>vs ant.</th></tr></thead>
+        <tbody id="hist-tabla"></tbody>
+      </table>
+    </div>
+    <div class="box">
+      <h2>Movimientos del mes</h2>
+      <ul class="list" id="hist-lista"></ul>
+    </div>
+  </section>
+
+  <section class="sheet" data-view="tarjetas" role="dialog" aria-modal="true" aria-labelledby="h-tarjetas" hidden>
+    <h1 id="h-tarjetas" tabindex="-1">Tarjetas</h1>
+    <div class="carousel" id="tarjetas-lista" translate="no" aria-label="Tus tarjetas: deslizá para cambiar"></div>
+    <div class="dots" id="tarjetas-dots"></div>
+    <div class="tiles" id="card-acciones">
+      <a class="tile" id="card-editar" href="#tarjetas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg>Editar</a>
+      <a class="tile" id="card-nueva" href="#tarjetas/nueva"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Agregar</a>
+    </div>
+    <form id="card-form" class="box" autocomplete="off" hidden>
+      <h2 id="card-titulo">Nueva tarjeta</h2>
+      <label>Banco <input name="banco" list="bancos" maxlength="30" autocapitalize="words" autocorrect="off" spellcheck="false" required></label>
+      <datalist id="bancos"></datalist>
+      <label>Red <select name="red"></select></label>
+      <fieldset class="seg">
+        <legend class="sr-only">Tipo de tarjeta</legend>
+        <label><input type="radio" name="tipo" value="credito" checked><span>Crédito</span></label>
+        <label><input type="radio" name="tipo" value="debito"><span>Débito</span></label>
+      </fieldset>
+      <p class="muted hint">Los gastos con débito se descuentan de “Cuenta de ahorros”, como el efectivo.</p>
+      <label>Últimos 4 dígitos <input name="ultimos4" inputmode="numeric" spellcheck="false" pattern="[0-9]{4}" maxlength="4" placeholder="1234" required></label>
+      <p class="muted hint">Solo los últimos 4. Nunca cargues el número completo.</p>
+      <label>Color <input type="color" name="color" value="#555555"></label>
+      <div class="row">
+        <button class="btn" type="button" id="card-cancelar">Cancelar</button>
+        <button class="btn primary" type="submit">Guardar tarjeta</button>
+      </div>
+      <button class="btn danger" type="button" id="card-borrar" hidden>Borrar tarjeta</button>
+    </form>
+
+    <h2 class="section-title">Tus datos</h2>
+    <p class="muted hint">Todo se guarda solo en este iPhone. Exportá un backup cada tanto por si iOS borra los datos.</p>
+    <button class="btn" type="button" id="exportar">Exportar backup (JSON)</button>
+    <label class="btn file">Importar backup<input type="file" id="importar"></label>
+    <button class="btn" type="button" id="ejemplo">Cargar datos de ejemplo</button>
+    <button class="btn danger" type="button" id="borrar-todo">Borrar todos los datos</button>
+  </section>
+
+  <section class="sheet" data-view="nuevo" role="dialog" aria-modal="true" aria-labelledby="nuevo-titulo" hidden>
+    <h1 id="nuevo-titulo" tabindex="-1">Nuevo gasto</h1>
+    <form id="tx-form" autocomplete="off">
+      <fieldset>
+        <legend>Medio de pago</legend>
+        <div class="carousel" id="card-picker" translate="no"></div>
+        <div class="dots" id="picker-dots"></div>
+        <p class="muted hint" id="pago-hint" aria-live="polite" hidden></p>
+      </fieldset>
+      <div class="monto-row">
+        <fieldset class="seg moneda">
+          <legend class="sr-only">Moneda del gasto</legend>
+          <label><input type="radio" name="moneda" value="ARS" checked><span>$ARS</span></label>
+          <label><input type="radio" name="moneda" value="USD"><span>$USD</span></label>
+        </fieldset>
+        <label>Monto <input name="monto" inputmode="decimal" placeholder="0" required></label>
+      </div>
+      <label>Descripción <input name="descripcion" maxlength="80" required></label>
+      <label>Categoría <select name="categoria"></select></label>
+      <div class="row">
+        <label>Fecha <input type="date" name="fecha" min="2000-01-01" required></label>
+        <label>Cuotas <input type="number" name="cuotas" min="1" max="72" value="1" inputmode="numeric" required></label>
+      </div>
+      <p class="muted hint" id="cuota-hint" aria-live="polite"></p>
+      <button class="btn primary" type="submit">Guardar gasto</button>
+      <button class="btn danger" type="button" id="tx-borrar" hidden>Borrar movimiento</button>
+    </form>
+  </section>
+</main>
+
+<a href="#nuevo" class="fab" aria-label="Nuevo gasto"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></a>
+</body>
+</html>
