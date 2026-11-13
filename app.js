@@ -41,7 +41,7 @@ const usadas = items => MONEDAS.filter(m => items.some(x => x.moneda === m));
 const menuVal = (sel, lines, caption) => {
   const el = $(sel);
   el.hidden = !lines.length;
-  el.innerHTML = lines.map(l => `<b>${l}</b>`).join('') + `<small>${caption}</small>`;
+  el.innerHTML = lines.map(l => `<b>${l}</b>`).join('') + (caption ? `<small>${caption}</small>` : '');
 };
 // Compras en cuotas que todavía tienen cuotas por pagar (la usan la hoja Cuotas y su fila del menú)
 const cuotasActivas = cur => txs.filter(t => t.cuotas > 1).map(t => ({ t, ...cuotaStatus(t, cur) })).filter(x => x.restantes > 0);
@@ -188,8 +188,13 @@ const views = {
     // Resumen a la derecha de los menús (un renglón por moneda; vacío si no hay nada que mostrar)
     const movs = txs.filter(t => ym(t.fecha) === cur).length;
     menuVal('#mv-movimientos', movs ? [String(movs)] : [], 'este mes');
-    const act = cuotasActivas(cur);
-    menuVal('#mv-cuotas', usadas(act.map(x => x.t)).map(m => money(sum(act.filter(x => x.t.moneda === m).map(x => x.restante)), m)), 'por pagar');
+    // Cuotas: lo que toca pagar este mes y, debajo, todo lo que queda (las mismas dos cifras de arriba de la hoja)
+    const act = cuotasActivas(cur), monCuotas = usadas(act.map(x => x.t));
+    const cuotasDe = (m, campo) => money(sum(act.filter(x => x.t.moneda === m).map(x => x[campo])), m);
+    menuVal('#mv-cuotas', [
+      ...monCuotas.map(m => `${cuotasDe(m, 'esteMes')} <small>este mes</small>`),
+      ...monCuotas.map(m => `${cuotasDe(m, 'restante')} <small>en total</small>`),
+    ], '');
     menuVal('#mv-ahorros', usadas(savings).map(m => money(sum(savings.filter(s => s.moneda === m).map(s => s.monto)), m)), 'ahorrado');
     const prev = addMonths(cur, -1), antes = monthTotal(txs, prev);
     menuVal('#mv-historial', antes ? [delta(monthTotal(txs, cur), antes)] : [], `vs ${monthName(prev).split(' ')[0]}`);

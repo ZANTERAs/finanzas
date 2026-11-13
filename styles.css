@@ -309,6 +309,8 @@ input:focus-visible, select:focus-visible { outline: 2px solid transparent; bord
 .menu-val { flex: none; text-align: right; line-height: 1.2; padding: 8px 0; font-variant-numeric: tabular-nums; }
 .menu-val b { display: block; font-size: 15px; font-weight: 600; }
 .menu-val small { display: block; margin-top: 2px; font-size: 11px; font-weight: 500; color: var(--ink-2); }
+.menu-val b small { display: inline; margin: 0 0 0 2px; } /* leyenda en el mismo renglón ("este mes", "en total") */
+.menu-val b + b { margin-top: 3px; }
 .menu-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ico { flex: none; width: 24px; height: 24px; fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
