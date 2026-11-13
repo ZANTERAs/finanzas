@@ -1,6 +1,7 @@
 // Self-check de calc.js: node test.mjs
 import assert from 'node:assert/strict';
-import { cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, parseMonto, cleanBackup, addMonths, sum, savingsByCategory, newId, byDateDesc, cashWithdrawal, checkSaving, fromAccount, formatMontoTexto, monthSplit } from './calc.js';
+import { cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, parseMonto, cleanBackup, addMonths, sum, savingsByCategory, newId, byDateDesc, cashWithdrawal, checkSaving, fromAccount, formatMontoTexto, monthSplit,
+  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes } from './calc.js';
 import { sampleData } from './sample.js';
 
 const t = { id: 'a', monto: 1000, moneda: 'ARS', descripcion: 'Heladera', categoria: 'Hogar', fecha: '2026-11-20', cardId: null, cuotas: 3 };
@@ -62,6 +63,29 @@ const mes = [
 assert.deepEqual(monthSplit(mes, tarjetas, '2026-11'), { tarjeta: 300, cuenta: 200 });
 assert.equal(sum(Object.values(monthSplit(mes, tarjetas, '2026-11'))), monthTotal(mes, '2026-11'));
 assert.deepEqual(monthSplit(mes, tarjetas, '2026-11', 'USD'), { tarjeta: 70, cuenta: 0 });
+
+// Dashboard: período, filtros, búsqueda sin tildes y orden
+assert.deepEqual(monthRange('2026-11', '2027-01'), ['2026-11', '2026-12', '2027-01']);
+const g = [
+  { ...t, id: 'a1', descripcion: 'Café', categoria: 'Comida', fecha: '2026-11-03', cardId: null, monto: 3000, cuotas: 1 },
+  { ...t, id: 'a2', descripcion: 'Heladera', categoria: 'Hogar', fecha: '2026-10-15', cardId: 'cred', monto: 900, cuotas: 3 },
+  { ...t, id: 'a3', descripcion: 'Super', categoria: 'Comida', fecha: '2026-11-20', cardId: 'deb', monto: 5000, cuotas: 1 },
+  { ...t, id: 'a4', descripcion: 'Cine', categoria: 'Ocio', fecha: '2026-09-01', cardId: null, monto: 800, cuotas: 1 },
+];
+const ids = rows => rows.map(r => `${r.t.id}:${r.monto}`);
+assert.deepEqual(ids(dashboardRows(g, tarjetas, { months: ['2026-11'] })), ['a3:5000', 'a1:3000', 'a2:300']); // la cuota 2 de la heladera cae en noviembre
+assert.deepEqual(ids(dashboardRows(g, tarjetas, { months: ['2026-11'], orden: 'menor' })), ['a2:300', 'a1:3000', 'a3:5000']);
+assert.deepEqual(ids(dashboardRows(g, tarjetas, { orden: 'viejos' })), ['a4:800', 'a2:900', 'a1:3000', 'a3:5000']); // todo: monto completo
+assert.deepEqual(ids(dashboardRows(g, tarjetas, { categoria: 'Comida', pago: 'cuenta' })), ['a3:5000', 'a1:3000']);
+assert.deepEqual(ids(dashboardRows(g, tarjetas, { pago: 'tarjeta' })), ['a2:900']);
+assert.deepEqual(ids(dashboardRows(g, tarjetas, { texto: 'cafe' })), ['a1:3000']);
+const nov = dashboardRows(g, tarjetas, { months: ['2026-11'] });
+assert.deepEqual(rowsByCategory(nov), [{ categoria: 'Comida', total: 8000 }, { categoria: 'Hogar', total: 300 }]);
+const dia = seriesPorDia(nov, '2026-11');
+assert.equal(dia.length, 30); assert.equal(dia[2], 3000); assert.equal(dia[14], 300); assert.equal(dia[19], 5000);
+assert.equal(sum(dia), sum(nov.map(r => r.monto))); // la serie suma el total del período
+const tres = ['2026-09', '2026-10', '2026-11'];
+assert.deepEqual(seriesPorMes(dashboardRows(g, tarjetas, { months: tres }), tres), [800, 300, 8300]);
 assert.equal(cleanBackup({ cards: [{ ...card, ultimos4: '45210' }], transactions: [] }), null);
 assert.equal(cleanBackup({ cards: [], transactions: [{ ...t, monto: -1 }] }), null);
 assert.equal(cleanBackup({ cards: [null], transactions: [] }), null);

@@ -2,6 +2,7 @@ import { loadAll, put, del, save, write } from './db.js';
 import {
   today, ym, addMonths, money, parseMonto, cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, sum,
   REDES, MONEDAS, checkCard, checkTx, cleanBackup, savingsByCategory, checkSaving, newId, byDateDesc, cashWithdrawal, fromAccount, formatMontoTexto, monthSplit,
+  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes,
 } from './calc.js';
 import { sampleData } from './sample.js';
 
@@ -73,7 +74,7 @@ const busy = fn => async e => {
 };
 // Formularios a medio cargar: se avisa antes de salir sin guardar.
 let dirty = false, lastHash = location.hash;
-document.addEventListener('input', e => { if (e.target.form) dirty = true; });
+document.addEventListener('input', e => { if (e.target.form && !('filtro' in e.target.form.dataset)) dirty = true; });
 const leave = hash => { dirty = false; location.hash = hash; };
 
 const monthDate = m => new Date(m.slice(0, 4), m.slice(5) - 1, 1);
@@ -129,9 +130,10 @@ function barChart(id, labels, data, { horizontal = false, highlight = -1, onPick
   // Los valores también para lectores de pantalla (el canvas solo se ve)
   const canvas = document.getElementById(id);
   canvas.dataset.label ??= canvas.getAttribute('aria-label');
-  canvas.setAttribute('aria-label', `${canvas.dataset.label}: ${labels.map((l, i) => `${l} ${money(data[i])}`).join(', ')}`);
+  canvas.setAttribute('aria-label', `${canvas.dataset.label}: ${labels.map((l, i) => data[i] ? `${l} ${money(data[i])}` : '').filter(Boolean).join(', ')}`);
   const valueAxis = { display: !compact, grid: { color: v('--grid') }, border: { display: false }, ticks: { color: v('--muted'), maxTicksLimit: 5, callback: n => n.toLocaleString('es-AR', { notation: 'compact' }) } };
-  const catAxis = { grid: { display: false }, border: { color: v('--axis') }, ticks: { color: v('--ink-2'), font: { size: horizontal && !compact ? 13 : 11 }, autoSkip: false, maxRotation: 0 } };
+  // Hasta 12 rótulos se ven todos (los meses de Historial); más (los días del mes) se salta algunos para que no se pisen
+  const catAxis = { grid: { display: false }, border: { color: v('--axis') }, ticks: { color: v('--ink-2'), font: { size: horizontal && !compact ? 13 : 11 }, autoSkip: labels.length > 12, maxRotation: 0 } };
   charts[id] = new Chart(canvas, {
     type: 'bar',
     data: { labels, datasets: [{
@@ -150,8 +152,8 @@ function barChart(id, labels, data, { horizontal = false, highlight = -1, onPick
     },
   });
 }
-function categoryChart(id, m, compact = false) {
-  let rows = byCategory(txs, m);
+// rows: [{ categoria, total }] de mayor a menor (byCategory o rowsByCategory)
+function categoryChart(id, rows, compact = false) {
   // Al lado del total no entran todas: las 5 más grandes y el resto junto en "Otras" (el detalle está en Historial)
   if (compact && rows.length > 6) rows = [...rows.slice(0, 5), { categoria: 'Otras', total: sum(rows.slice(5).map(r => r.total)) }];
   const canvas = document.getElementById(id);
@@ -183,7 +185,7 @@ const views = {
     $('#inicio-split').hidden = !enMes.length;
     $('#inicio-tarjeta').textContent = parte('tarjeta');
     $('#inicio-cuenta').textContent = parte('cuenta');
-    categoryChart('chart-inicio', cur, true);
+    categoryChart('chart-inicio', byCategory(txs, cur), true);
 
     // Resumen a la derecha de los menús (un renglón por moneda; vacío si no hay nada que mostrar)
     const movs = txs.filter(t => ym(t.fecha) === cur).length;
@@ -204,7 +206,41 @@ const views = {
   categorias() {
     const cur = ym(today());
     $('#cat-mes').textContent = monthName(cur);
-    categoryTable('#cat-tabla', categoryChart('chart-cat', cur), addMonths(cur, -1));
+    categoryTable('#cat-tabla', categoryChart('chart-cat', byCategory(txs, cur)), addMonths(cur, -1));
+  },
+
+  // Hoja que abre el total del mes: todos los gastos con filtros, resumen, gráficos y la lista.
+  // Los filtros quedan como estaban al volver (por ejemplo, después de editar un gasto de la lista).
+  gastos() {
+    const cur = ym(today()), f = $('#filtros');
+    const months = { mes: [cur], anterior: [addMonths(cur, -1)], '3m': monthRange(addMonths(cur, -2), cur), '12m': monthRange(addMonths(cur, -11), cur) }[f.periodo.value] ?? null;
+    const cats = [...new Set(txs.map(t => t.categoria))].sort((a, b) => a.localeCompare(b, 'es')), cat = f.categoria.value;
+    f.categoria.innerHTML = '<option value="">Todas</option>' + cats.map(c => `<option>${esc(c)}</option>`).join('');
+    f.categoria.value = cats.includes(cat) ? cat : '';
+    const rows = dashboardRows(txs, cards, { months, categoria: f.categoria.value, pago: f.pago.value, texto: f.texto.value, orden: f.orden.value });
+
+    // Resumen: un renglón por moneda (pesos y dólares no se suman)
+    const monedas = usadas(rows.map(r => r.t)), de = (m, ok) => sum(rows.filter(r => r.t.moneda === m && ok(r.t)).map(r => r.monto));
+    porMoneda('#g-total', m => de(m, () => true), monedas);
+    $('#g-cant').textContent = rows.length;
+    // Lo que se paga en cuotas y lo que se pagó de una vez: las dos suman el total
+    $('#g-cuotas-label').textContent = months?.length === 1 ? 'Cuotas del mes' : 'En cuotas';
+    porMoneda('#g-cuotas', m => de(m, t => t.cuotas > 1), monedas);
+    porMoneda('#g-contado', m => de(m, t => t.cuotas === 1), monedas);
+
+    categoryChart('chart-g-cat', rowsByCategory(rows));
+    // En el tiempo: un solo mes va por día; si no, por mes. "Todo" va del primer gasto a la última cuota (suma lo mismo que el total).
+    const meses = months ?? monthRange([cur, ...rows.map(r => ym(r.t.fecha))].sort()[0],
+      [cur, ...rows.map(r => addMonths(ym(r.t.fecha), r.t.cuotas - 1))].sort().at(-1));
+    const unMes = meses.length === 1;
+    $('#g-tiempo-titulo').textContent = unMes ? `Por día · ${monthName(meses[0])}` : 'Por mes';
+    $('#chart-g-tiempo').closest('.box').hidden = !rows.some(r => r.t.moneda === 'ARS');
+    const data = unMes ? seriesPorDia(rows, meses[0]) : seriesPorMes(rows, meses);
+    barChart('chart-g-tiempo', unMes ? data.map((_, i) => String(i + 1)) : meses.map(m => meses.length > 12 ? `${monthShort(m)} ${m.slice(2, 4)}` : monthShort(m)), data);
+
+    $('#g-lista').innerHTML = rows.map(({ t, monto }) => txItem(t, monto, t.cuotas < 2 ? ''
+      : unMes && months ? ` · cuota ${cuotaStatus(t, meses[0]).pagadas + 1}/${t.cuotas}` : ` · ${t.cuotas} cuotas`)).join('')
+      || empty('No hay gastos con estos filtros.');
   },
 
   movimientos() {
@@ -287,9 +323,7 @@ const views = {
   historial(id) {
     const cur = ym(today());
     if (id) histSel = id; // #historial/2026-06 abre ese mes
-    const first = txs.reduce((min, t) => ym(t.fecha) < min ? ym(t.fecha) : min, addMonths(cur, -11));
-    const months = [];
-    for (let m = first; m <= cur; m = addMonths(m, 1)) months.push(m);
+    const months = monthRange(txs.reduce((min, t) => ym(t.fecha) < min ? ym(t.fecha) : min, addMonths(cur, -11)), cur);
     if (!months.includes(histSel)) histSel = addMonths(cur, -1);
     $('#hist-mes').innerHTML = [...months].reverse()
       .map(m => `<option value="${m}"${m === histSel ? ' selected' : ''}>${monthName(m)}${m === cur ? ' (actual)' : ''}</option>`).join('');
@@ -304,7 +338,7 @@ const views = {
     $('#hist-prev-label').textContent = `vs ${monthName(prev)} (${money(totalPrev)})`;
     $('#hist-delta').innerHTML = delta(total, totalPrev);
 
-    categoryTable('#hist-tabla', categoryChart('chart-hist-cat', histSel), prev);
+    categoryTable('#hist-tabla', categoryChart('chart-hist-cat', byCategory(txs, histSel)), prev);
 
     $('#hist-lista').innerHTML = txs.filter(t => shareInMonth(t, histSel)).sort(byDateDesc).map(t => {
       const i = cuotaStatus(t, histSel).pagadas + 1;
@@ -328,6 +362,9 @@ const views = {
 // El mes elegido queda en la URL sin volver arriba de todo.
 function pickMonth(m) { history.replaceState(null, '', `#historial/${m}`); lastHash = location.hash; views.historial(m); }
 $('#hist-mes').addEventListener('change', e => pickMonth(e.target.value));
+// Filtros de Gastos: se aplican mientras elegís o escribís (Enter en Buscar no recarga la página)
+$('#filtros').addEventListener('input', () => views.gastos());
+$('#filtros').addEventListener('submit', e => e.preventDefault());
 
 function onHashChange() {
   if (dirty && !confirm('Tenés cambios sin guardar. ¿Salir igual?')) { history.replaceState(null, '', lastHash); return; }
@@ -575,7 +612,7 @@ addEventListener('hashchange', onHashChange);
 // Al cambiar claro/oscuro se redibujan los gráficos de la sección abierta (sin moverte ni tocar formularios).
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   views.inicio();
-  if (['historial', 'categorias'].includes(current.view)) views[current.view](current.id);
+  if (['historial', 'categorias', 'gastos'].includes(current.view)) views[current.view](current.id);
 });
 // Estos dos son opcionales: si fallan no hay que mostrar el aviso de error.
 navigator.storage?.persist?.().catch(() => {});

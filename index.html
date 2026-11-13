@@ -26,15 +26,15 @@
   <div id="pagina">
     <h1>Finanzas</h1>
     <div class="resumen">
-      <header class="box hero">
+      <a class="box hero cat-link" href="#gastos">
         <p class="eyebrow" id="inicio-mes"></p>
         <p class="big" id="inicio-total"></p>
-        <p class="muted">gastado este mes</p>
+        <p class="muted">gastado este mes<span class="sr-only">. Ver todos los gastos</span></p>
         <dl class="split" id="inicio-split">
           <div><dt>Tarjeta</dt><dd id="inicio-tarjeta"></dd></div>
           <div><dt>Efectivo / débito</dt><dd id="inicio-cuenta"></dd></div>
         </dl>
-      </header>
+      </a>
       <a class="box cat-link" id="inicio-cat-box" href="#categorias" aria-label="Ver el gasto del mes por categoría">
         <h2>Por categoría</h2>
         <div class="chart-wrap"><canvas id="chart-inicio" role="img" aria-label="Gasto del mes por categoría"></canvas></div>
@@ -50,6 +50,48 @@
   </div>
 
   <!-- Hojas: se abren encima de la página (una sola a la vez) y se cierran con "Atrás" -->
+  <section class="sheet" data-view="gastos" role="dialog" aria-modal="true" aria-labelledby="h-gastos" hidden>
+    <h1 id="h-gastos" tabindex="-1">Gastos</h1>
+    <!-- data-filtro: cambiar un filtro no cuenta como "cambios sin guardar" -->
+    <form id="filtros" autocomplete="off" data-filtro>
+      <div class="row">
+        <label>Período <select name="periodo">
+          <option value="mes">Este mes</option><option value="anterior">Mes pasado</option>
+          <option value="3m">3 meses</option><option value="12m">12 meses</option><option value="todo">Todo</option>
+        </select></label>
+        <label>Ordenar <select name="orden">
+          <option value="nuevos">Más nuevos</option><option value="viejos">Más viejos</option>
+          <option value="mayor">Mayor monto</option><option value="menor">Menor monto</option>
+        </select></label>
+      </div>
+      <div class="row">
+        <label>Categoría <select name="categoria"><option value="">Todas</option></select></label>
+        <label>Pago <select name="pago">
+          <option value="">Todos</option><option value="tarjeta">Tarjeta</option><option value="cuenta">Efectivo/débito</option>
+        </select></label>
+      </div>
+      <label>Buscar <input type="search" name="texto" placeholder="Ej.: supermercado…" enterkeyhint="search" spellcheck="false"></label>
+    </form>
+    <div class="stats">
+      <div class="stat"><span>Total</span><strong id="g-total"></strong></div>
+      <div class="stat"><span>Gastos</span><strong id="g-cant"></strong></div>
+      <div class="stat"><span id="g-cuotas-label">Cuotas del mes</span><strong id="g-cuotas"></strong></div>
+      <div class="stat"><span>Sin cuotas</span><strong id="g-contado"></strong></div>
+    </div>
+    <div class="box">
+      <h2>Por categoría</h2>
+      <div class="chart-wrap"><canvas id="chart-g-cat" role="img" aria-label="Gasto por categoría"></canvas></div>
+    </div>
+    <div class="box">
+      <h2 id="g-tiempo-titulo">Por día</h2>
+      <div class="chart-wrap"><canvas id="chart-g-tiempo" role="img" aria-label="Gasto en el tiempo"></canvas></div>
+    </div>
+    <div class="box">
+      <h2>Detalle</h2>
+      <ul class="list" id="g-lista"></ul>
+    </div>
+  </section>
+
   <section class="sheet" data-view="movimientos" role="dialog" aria-modal="true" aria-labelledby="h-movimientos" hidden>
     <h1 id="h-movimientos" tabindex="-1">Últimos movimientos</h1>
     <div class="box"><ul class="list" id="movimientos-lista"></ul></div>

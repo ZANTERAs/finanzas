@@ -4,6 +4,8 @@ const pad = n => String(n).padStart(2, '0');
 export const today = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 export const ym = fecha => fecha.slice(0, 7); // 'YYYY-MM-DD' -> 'YYYY-MM'
 export const addMonths = (m, n) => { const [y, mo] = m.split('-').map(Number); return today(new Date(y, mo - 1 + n, 1)).slice(0, 7); };
+// Meses de `desde` a `hasta`, inclusive ('2026-09', '2026-11' → ['2026-09', '2026-10', '2026-11'])
+export const monthRange = (desde, hasta) => { const r = []; for (let m = desde; m <= hasta; m = addMonths(m, 1)) r.push(m); return r; };
 const monthDiff = (a, b) => { const [ay, am] = a.split('-').map(Number), [by, bm] = b.split('-').map(Number); return (by - ay) * 12 + bm - am; };
 
 const cents = v => Math.round(v * 100);
@@ -33,6 +35,34 @@ function groupSum(items, value, moneda = 'ARS') {
 export const byCategory = (txs, m) => groupSum(txs, t => shareInMonth(t, m));
 // Ahorros: monto positivo = guardé, negativo = saqué. Saldo por categoría en una moneda (pesos y dólares no se mezclan).
 export const savingsByCategory = (savings, moneda = 'ARS') => groupSum(savings, s => s.monto, moneda);
+
+// ---------- Dashboard de gastos ----------
+const sinTildes = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+// Filas { t, monto } de los gastos que pasan los filtros. `months` = meses del período: cada gasto cuenta lo que cae en
+// ellos (en cuotas, solo esas cuotas, igual que el total del mes); null = todo, con el monto completo.
+// shortcut: "mayor/menor monto" compara el número sin convertir monedas (US$ 100 queda debajo de $ 100.000); pedir cotización si molesta
+export function dashboardRows(txs, cards, { months = null, categoria = '', pago = '', texto = '', orden = 'nuevos' } = {}) {
+  const q = sinTildes(texto.trim());
+  const orders = {
+    nuevos: (a, b) => byDateDesc(a.t, b.t),
+    viejos: (a, b) => byDateDesc(b.t, a.t),
+    mayor: (a, b) => b.monto - a.monto,
+    menor: (a, b) => a.monto - b.monto,
+  };
+  return txs.map(t => ({ t, monto: months ? sum(months.map(m => shareInMonth(t, m))) : t.monto }))
+    .filter(({ t, monto }) => monto > 0 && (!categoria || t.categoria === categoria)
+      && (!pago || (pago === 'cuenta') === fromAccount(t, cards)) && (!q || sinTildes(t.descripcion).includes(q)))
+    .sort(orders[orden] ?? orders.nuevos);
+}
+export const rowsByCategory = (rows, moneda = 'ARS') => groupSum(rows.map(r => ({ ...r.t, monto: r.monto })), x => x.monto, moneda);
+// Serie por día de un mes: cada gasto en el día de su fecha (una cuota de una compra vieja cae en el mismo número de día).
+export function seriesPorDia(rows, m, moneda = 'ARS') {
+  const [y, mo] = m.split('-').map(Number), dias = new Date(y, mo, 0).getDate(), c = Array(dias).fill(0);
+  for (const r of rows) if (r.t.moneda === moneda) c[Math.min(dias, Number(r.t.fecha.slice(8))) - 1] += cents(r.monto);
+  return c.map(v => v / 100);
+}
+export const seriesPorMes = (rows, months, moneda = 'ARS') =>
+  months.map(m => sum(rows.filter(r => r.t.moneda === moneda).map(r => shareInMonth(r.t, m))));
 
 // Pagadas = cuotas de meses anteriores a m; la de m cuenta como pendiente de este mes.
 export function cuotaStatus(t, m) {
