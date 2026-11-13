@@ -37,6 +37,14 @@ const porMoneda = (sel, amountOf, usadas) => {
   el.classList.toggle('long', lines[0].length > 12);
 };
 const usadas = items => MONEDAS.filter(m => items.some(x => x.moneda === m));
+// Valor a la derecha de una fila de menú: uno o más renglones (lines ya es HTML seguro: montos o el ▲▼ de delta) y una leyenda
+const menuVal = (sel, lines, caption) => {
+  const el = $(sel);
+  el.hidden = !lines.length;
+  el.innerHTML = lines.map(l => `<b>${l}</b>`).join('') + `<small>${caption}</small>`;
+};
+// Compras en cuotas que todavía tienen cuotas por pagar (la usan la hoja Cuotas y su fila del menú)
+const cuotasActivas = cur => txs.filter(t => t.cuotas > 1).map(t => ({ t, ...cuotaStatus(t, cur) })).filter(x => x.restantes > 0);
 // Campo Monto: se formatea mientras escribís (700000 → 700.000) sin mover el cursor de entre las cifras.
 function montoVivo(input) {
   input.addEventListener('input', () => {
@@ -176,6 +184,15 @@ const views = {
     $('#inicio-tarjeta').textContent = parte('tarjeta');
     $('#inicio-cuenta').textContent = parte('cuenta');
     categoryChart('chart-inicio', cur, true);
+
+    // Resumen a la derecha de los menús (un renglón por moneda; vacío si no hay nada que mostrar)
+    const movs = txs.filter(t => ym(t.fecha) === cur).length;
+    menuVal('#mv-movimientos', movs ? [String(movs)] : [], 'este mes');
+    const act = cuotasActivas(cur);
+    menuVal('#mv-cuotas', usadas(act.map(x => x.t)).map(m => money(sum(act.filter(x => x.t.moneda === m).map(x => x.restante)), m)), 'por pagar');
+    menuVal('#mv-ahorros', usadas(savings).map(m => money(sum(savings.filter(s => s.moneda === m).map(s => s.monto)), m)), 'ahorrado');
+    const prev = addMonths(cur, -1), antes = monthTotal(txs, prev);
+    menuVal('#mv-historial', antes ? [delta(monthTotal(txs, cur), antes)] : [], `vs ${monthName(prev).split(' ')[0]}`);
   },
 
   // Hoja que abre el recuadro "Por categoría": todas las categorías del mes, con la comparación contra el anterior
@@ -227,8 +244,7 @@ const views = {
 
   cuotas() {
     const cur = ym(today());
-    const activas = txs.filter(t => t.cuotas > 1).map(t => ({ t, ...cuotaStatus(t, cur) })).filter(x => x.restantes > 0)
-      .sort((a, b) => a.restantes - b.restantes);
+    const activas = cuotasActivas(cur).sort((a, b) => a.restantes - b.restantes);
     const enCuotas = usadas(activas.map(x => x.t)), de = m => activas.filter(x => x.t.moneda === m);
     porMoneda('#cuotas-mes', m => sum(de(m).map(x => x.esteMes)), enCuotas);
     porMoneda('#cuotas-total', m => sum(de(m).map(x => x.restante)), enCuotas);
