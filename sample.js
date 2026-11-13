@@ -36,5 +36,10 @@ export function sampleData(now = new Date()) {
   }));
   const savings = AHORROS.map(([back, categoria, monto, descripcion, moneda = 'ARS'], i) =>
     ({ id: `demo-a${i}`, monto, moneda, categoria, descripcion, fecha: fecha(back, 5) }));
-  return { cards: CARDS, transactions, savings };
+  // Sueldo todos los meses (con aumentos) y un trabajo freelance en dólares
+  const incomes = [6, 5, 4, 3, 2, 1, 0].map(back => ({
+    id: `demo-i${back}`, monto: Math.round(1200000 * 1.03 ** (6 - back) / 1000) * 1000, moneda: 'ARS', descripcion: 'Sueldo', fecha: fecha(back, 1),
+  }));
+  incomes.push({ id: 'demo-i-free', monto: 400, moneda: 'USD', descripcion: 'Trabajo freelance', fecha: fecha(2, 18) });
+  return { cards: CARDS, transactions, savings, incomes };
 }

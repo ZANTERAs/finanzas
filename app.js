@@ -2,7 +2,7 @@ import { loadAll, put, del, save, write } from './db.js';
 import {
   today, ym, addMonths, money, parseMonto, cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, sum,
   REDES, MONEDAS, checkCard, checkTx, cleanBackup, savingsByCategory, checkSaving, newId, byDateDesc, cashWithdrawal, fromAccount, formatMontoTexto, monthSplit,
-  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes,
+  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkIncome,
 } from './calc.js';
 import { sampleData } from './sample.js';
 
@@ -15,17 +15,18 @@ const BANCOS = {
 };
 
 const AHORRO_SUGERIDAS = ['Cuenta de ahorros', 'Pago celular', 'Futuro viaje', 'Emergencias'];
+const INGRESO_SUGERIDOS = ['Sueldo', 'Aguinaldo', 'Trabajo freelance', 'Bono'];
 
 // Un guardado que falla (sin espacio, base cortada) se avisa en vez de no hacer nada.
 addEventListener('unhandledrejection', e =>
   alert(`No se pudo completar la acción (${e.reason?.message ?? e.reason}). Probá de nuevo; si sigue fallando, cerrá y volvé a abrir la app.`));
 
-let cards = [], txs = [], savings = [], editTx = null, editCard = null, editSaving = null, histSel = null;
+let cards = [], txs = [], savings = [], incomes = [], editTx = null, editCard = null, editSaving = null, editIncome = null, histSel = null;
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const empty = msg => `<li class="empty">${msg}</li>`;
 const reload = async () => {
-  [cards, txs, savings] = await loadAll();
+  [cards, txs, savings, incomes] = await loadAll();
   cards.sort((a, b) => a.banco.localeCompare(b.banco, 'es')); // la base las devuelve por id (al azar)
 };
 const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
@@ -198,6 +199,8 @@ const views = {
       ...monCuotas.map(m => `${cuotasDe(m, 'restante')} <small>en total</small>`),
     ], '');
     menuVal('#mv-ahorros', usadas(savings).map(m => money(sum(savings.filter(s => s.moneda === m).map(s => s.monto)), m)), 'ahorrado');
+    const ingMes = incomes.filter(i => ym(i.fecha) === cur);
+    menuVal('#mv-ingresos', usadas(ingMes).map(m => money(sum(ingMes.filter(i => i.moneda === m).map(i => i.monto)), m)), 'este mes');
     const prev = addMonths(cur, -1), antes = monthTotal(txs, prev);
     menuVal('#mv-historial', antes ? [delta(monthTotal(txs, cur), antes)] : [], `vs ${monthName(prev).split(' ')[0]}`);
   },
@@ -318,6 +321,19 @@ const views = {
     }).join('');
     const s = savings.find(x => x.id === id);
     id === 'nuevo' ? openSavingForm() : s ? openSavingForm(s) : closeSavingForm();
+  },
+
+  // Ingresos (sueldo, freelance…): arriba lo cobrado este mes; abajo todos, del más nuevo al más viejo
+  ingresos(id) {
+    const cur = ym(today()), delMes = incomes.filter(i => ym(i.fecha) === cur);
+    $('#ingresos-mes').textContent = `cobrado en ${monthName(cur).split(' ')[0]}`;
+    porMoneda('#ingresos-total', m => sum(delMes.filter(i => i.moneda === m).map(i => i.monto)), usadas(delMes));
+    $('#ingreso-sugeridos').innerHTML = [...new Set([...incomes.map(i => i.descripcion), ...INGRESO_SUGERIDOS])].map(c => `<option value="${esc(c)}">`).join('');
+    $('#ingresos-lista').innerHTML = [...incomes].sort(byDateDesc).map(i => `<li><a class="item" href="#ingresos/${esc(i.id)}">
+      <span class="grow"><b>${esc(i.descripcion)}</b><small>${fmtDate(i.fecha)} ${i.fecha.slice(0, 4)}</small></span>
+      <span class="amt in">+ ${money(i.monto, i.moneda)}</span></a></li>`).join('') || empty('Todavía no cargaste ingresos.');
+    const i = incomes.find(x => x.id === id);
+    id === 'nuevo' ? openIncomeForm() : i ? openIncomeForm(i) : closeIncomeForm();
   },
 
   historial(id) {
@@ -556,9 +572,45 @@ $('#ahorro-borrar').addEventListener('click', async () => {
   await backToAhorros();
 });
 
+// ---------- Ingresos ----------
+const incForm = $('#ingreso-form');
+function openIncomeForm(i) {
+  editIncome = i || null;
+  incForm.reset();
+  $('#ingreso-titulo').textContent = i ? 'Editar ingreso' : 'Nuevo ingreso';
+  incForm.moneda.value = i?.moneda || 'ARS';
+  incForm.monto.value = i ? formatMontoTexto(String(i.monto).replace('.', ',')) : '';
+  incForm.descripcion.value = i?.descripcion || '';
+  incForm.fecha.value = i?.fecha || today();
+  incForm.fecha.max = today();
+  $('#ingreso-borrar').hidden = !i;
+  $('#ingreso-nuevo').hidden = true;
+  incForm.hidden = false;
+  incForm.scrollIntoView({ behavior: motion(), block: 'start' });
+}
+function closeIncomeForm() { incForm.hidden = true; $('#ingreso-nuevo').hidden = false; editIncome = null; dirty = false; }
+const backToIngresos = async () => { await reload(); history.replaceState(null, '', '#ingresos'); route(); };
+
+montoVivo(incForm.monto);
+$('#ingreso-cancelar').addEventListener('click', () => leave('#ingresos'));
+incForm.addEventListener('submit', busy(async () => {
+  const monto = parseMonto(incForm.monto.value), descripcion = incForm.descripcion.value.trim();
+  if (!(monto > 0)) return fieldError(incForm.monto, 'Ingresá un monto válido, por ejemplo 850.000.');
+  if (!descripcion) return fieldError(incForm.descripcion, 'Escribí de qué es, por ejemplo “Sueldo”.');
+  const i = { id: editIncome?.id || newId(), monto, moneda: incForm.moneda.value, descripcion, fecha: incForm.fecha.value };
+  if (!checkIncome(i)) return alert('Revisá los datos: elegí una fecha.');
+  await put('incomes', i);
+  await backToIngresos();
+}));
+$('#ingreso-borrar').addEventListener('click', async () => {
+  if (!editIncome || !confirm(`¿Borrar el ingreso “${editIncome.descripcion}”?`)) return;
+  await del('incomes', editIncome.id);
+  await backToIngresos();
+});
+
 // ---------- Datos: backup, ejemplo, borrar ----------
 $('#exportar').addEventListener('click', async () => {
-  const json = JSON.stringify({ app: 'finanzas', version: 2, exportado: new Date().toISOString(), cards, transactions: txs, savings }, null, 2);
+  const json = JSON.stringify({ app: 'finanzas', version: 3, exportado: new Date().toISOString(), cards, transactions: txs, savings, incomes }, null, 2);
   const file = new File([json], `finanzas-${today()}.json`, { type: 'application/json' });
   const download = () => {
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(file), download: file.name });
@@ -578,7 +630,7 @@ $('#importar').addEventListener('change', async e => {
   let data = null;
   try { data = cleanBackup(JSON.parse(await file.text())); } catch { /* JSON inválido: data queda null */ }
   if (!data) return alert('Ese archivo no es un backup de esta app, así que no se cambió nada. Elegí el .json que guardaste con “Exportar backup”.');
-  if (!confirm(`Esto reemplaza todos tus datos por ${data.cards.length} tarjetas, ${data.transactions.length} gastos y ${data.savings.length} ahorros del backup. ¿Seguimos?`)) return;
+  if (!confirm(`Esto reemplaza todos tus datos por ${data.cards.length} tarjetas, ${data.transactions.length} gastos, ${data.savings.length} ahorros y ${data.incomes.length} ingresos del backup. ¿Seguimos?`)) return;
   await save(data, true);
   await reload();
   alert('Backup importado.');
@@ -587,14 +639,14 @@ $('#importar').addEventListener('change', async e => {
 
 $('#ejemplo').addEventListener('click', async () => {
   const data = sampleData();
-  if (!confirm(`Se agregan ${data.cards.length} tarjetas, ${data.transactions.length} gastos y ${data.savings.length} ahorros de ejemplo. Después podés borrarlos con “Borrar todos los datos”.`)) return;
+  if (!confirm(`Se agregan ${data.cards.length} tarjetas, ${data.transactions.length} gastos, ${data.savings.length} ahorros y ${data.incomes.length} ingresos de ejemplo. Después podés borrarlos con “Borrar todos los datos”.`)) return;
   await save(data, false);
   await reload();
   leave('#inicio');
 });
 
 $('#borrar-todo').addEventListener('click', async () => {
-  if (!confirm('¿Borrar TODAS las tarjetas, gastos y ahorros? No se puede deshacer (salvo que tengas un backup).')) return;
+  if (!confirm('¿Borrar TODAS las tarjetas, gastos, ahorros e ingresos? No se puede deshacer (salvo que tengas un backup).')) return;
   await save({ cards: [], transactions: [] }, true);
   await reload();
   route();

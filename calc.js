@@ -114,16 +114,21 @@ export const checkTx = t => str(t.id) && Number.isFinite(t.monto) && t.monto > 0
   Number.isInteger(t.cuotas) && t.cuotas >= 1 && t.cuotas <= 72 && (t.cardId === null || str(t.cardId));
 export const checkSaving = s => str(s.id) && Number.isFinite(s.monto) && s.monto !== 0 && MONEDAS.includes(s.moneda) &&
   str(s.categoria) && typeof s.descripcion === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.fecha);
+// Ingreso (sueldo, freelance…): siempre positivo, con concepto y fecha
+export const checkIncome = i => str(i.id) && Number.isFinite(i.monto) && i.monto > 0 && MONEDAS.includes(i.moneda) &&
+  str(i.descripcion) && /^\d{4}-\d{2}-\d{2}$/.test(i.fecha);
 
 // Valida un backup importado y se queda solo con los campos conocidos (así nunca entra, p. ej., un número de tarjeta completo).
-// Los backups viejos no traen "savings" (se importan con la lista vacía) ni el tipo de tarjeta (cuentan como crédito).
+// Los backups viejos no traen "savings" ni "incomes" (se importan con la lista vacía) ni el tipo de tarjeta (cuentan como crédito).
 export function cleanBackup(d) {
   try {
     const cards = d.cards.map(({ id, banco, red, tipo = 'credito', ultimos4, color }) => ({ id, banco, red, tipo, ultimos4, color }));
     const transactions = d.transactions.map(({ id, monto, moneda, descripcion, categoria, fecha, cardId = null, cuotas }) =>
       ({ id, monto, moneda, descripcion, categoria, fecha, cardId, cuotas }));
     const savings = (d.savings ?? []).map(({ id, monto, moneda, categoria, descripcion = '', fecha }) => ({ id, monto, moneda, categoria, descripcion, fecha }));
-    return cards.every(checkCard) && transactions.every(checkTx) && savings.every(checkSaving) ? { cards, transactions, savings } : null;
+    const incomes = (d.incomes ?? []).map(({ id, monto, moneda, descripcion, fecha }) => ({ id, monto, moneda, descripcion, fecha }));
+    return cards.every(checkCard) && transactions.every(checkTx) && savings.every(checkSaving) && incomes.every(checkIncome)
+      ? { cards, transactions, savings, incomes } : null;
   } catch {
     return null;
   }

@@ -1,9 +1,9 @@
 // Wrapper mínimo de IndexedDB: un store por tipo de dato, keyPath 'id'.
-const STORES = ['cards', 'transactions', 'savings'];
+const STORES = ['cards', 'transactions', 'savings', 'incomes'];
 let conn;
 const open = () => conn ||= new Promise((res, rej) => {
-  const r = indexedDB.open('finanzas', 2);
-  // v2 agrega "savings"; solo crea lo que falta, así no se pierde nada de la v1.
+  const r = indexedDB.open('finanzas', 3);
+  // v2 agrega "savings" y v3 "incomes"; solo crea lo que falta, así no se pierde nada de antes.
   r.onupgradeneeded = () => STORES.forEach(s => r.result.objectStoreNames.contains(s) || r.result.createObjectStore(s, { keyPath: 'id' }));
   r.onsuccess = () => res(r.result);
   r.onerror = () => rej(r.error);
@@ -33,7 +33,7 @@ export const write = ({ put: puts = {}, del: dels = {} }) => run('readwrite', s 
   Object.entries(dels).forEach(([n, ids]) => ids.forEach(id => s[n].delete(id)));
 });
 export const del = (store, id) => run('readwrite', s => { s[store].delete(id); });
-// Guarda { cards, transactions, savings }; con replace=true borra todo antes (import / borrar todo).
+// Guarda { cards, transactions, savings, incomes }; con replace=true borra todo antes (import / borrar todo).
 export const save = (data, replace) => run('readwrite', s => STORES.forEach(n => {
   if (replace) s[n].clear();
   (data[n] || []).forEach(o => s[n].put(o));

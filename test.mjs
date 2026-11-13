@@ -101,11 +101,19 @@ assert.deepEqual(cleanBackup({ cards: [], transactions: [] }).savings, []);
 assert.equal(cleanBackup({ cards: [], transactions: [], savings: [ah('1', 'Viaje', 0)] }), null);
 assert.equal(cleanBackup({ cards: [], transactions: [], savings: [ah('1', '', 10)] }), null);
 
+// Ingresos: backups viejos sin "incomes" importan con la lista vacía; monto <= 0 o sin concepto no entra
+const ing = { id: 'i1', monto: 1450000, moneda: 'ARS', descripcion: 'Sueldo', fecha: '2026-11-03' };
+assert.deepEqual(cleanBackup({ cards: [], transactions: [] }).incomes, []);
+assert.deepEqual(cleanBackup({ cards: [], transactions: [], incomes: [{ ...ing, extra: 1 }] }).incomes, [ing]);
+assert.equal(cleanBackup({ cards: [], transactions: [], incomes: [{ ...ing, monto: -5 }] }), null);
+assert.equal(cleanBackup({ cards: [], transactions: [], incomes: [{ ...ing, descripcion: ' ' }] }), null);
+
 // Backup completo (exportar → importar) con datos realistas: tiene que volver idéntico.
 // Si el export y la validación del import se desalinean (un campo nuevo, una regla nueva), esto falla.
 const backup = JSON.parse(JSON.stringify({ app: 'finanzas', version: 2, exportado: '2026-11-12T12:00:00.000Z', ...sampleData(new Date(2026, 10, 12)) }));
-assert.deepEqual(cleanBackup(backup), { cards: backup.cards, transactions: backup.transactions, savings: backup.savings });
+assert.deepEqual(cleanBackup(backup), { cards: backup.cards, transactions: backup.transactions, savings: backup.savings, incomes: backup.incomes });
 assert.ok(backup.transactions.some(t => t.cuotas > 1) && backup.savings.some(s => s.moneda === 'USD' && s.monto > 0) && backup.savings.some(s => s.monto < 0));
+assert.ok(backup.incomes.some(i => i.moneda === 'ARS') && backup.incomes.some(i => i.moneda === 'USD'));
 
 // newId: ordenar ids = ordenar por cuándo se cargó, también al cruzar 2059 (la hora pasa de 8 a 9 caracteres)
 assert.ok(newId(1_700_000_000_000) < newId(1_700_000_000_001));
