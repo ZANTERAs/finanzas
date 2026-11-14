@@ -103,6 +103,62 @@ export const fromAccount = (t, cards) => !t.cardId || cards.find(c => c.id === t
 export const cashWithdrawal = (t, categoria) =>
   ({ id: `gasto-${t.id}`, monto: -t.monto, moneda: t.moneda, categoria, descripcion: `Gasto: ${t.descripcion}`, fecha: t.fecha });
 
+// ---------- Servicios (luz, gas, agua): el gasto puede llevar el consumo del período y la lectura del medidor ----------
+export const UNIDADES = { Luz: 'kWh', Gas: 'm³', Agua: 'm³' };
+// Consumos: los servicios de la casa (Servicios = los demás: celular, cable, expensas…)
+export const SERVICIOS = ['Luz', 'Gas', 'Agua', 'Internet', 'Servicios'];
+// Consumo (kWh o m³) de una categoría en cada mes, según la fecha de la factura; null = ese mes no hubo factura
+// (luz y gas suelen ser bimestrales: el hueco no es un consumo cero)
+export const consumoPorMes = (txs, categoria, months) => months.map(m => {
+  const xs = txs.filter(t => t.categoria === categoria && t.consumo !== undefined && ym(t.fecha) === m);
+  return xs.length ? sum(xs.map(t => t.consumo)) : null;
+});
+
+// ---------- Suscripciones (Netflix, Disney+, Claude…): se cobran todos los meses el mismo día ----------
+// shortcut: solo mensuales; si aparece una anual, agregar la frecuencia
+// El gasto de la suscripción s en el mes m. Id fijo por mes: cargarla dos veces no la duplica. Día 31 en un mes de 30 → el 30.
+export function subExpense(s, m) {
+  const [y, mo] = m.split('-').map(Number), dia = Math.min(s.dia, new Date(y, mo, 0).getDate());
+  return { id: `sub-${s.id}-${m}`, monto: s.monto, moneda: s.moneda, descripcion: s.nombre, categoria: 'Suscripciones', fecha: `${m}-${pad(dia)}`, cardId: s.cardId, cuotas: 1 };
+}
+// Los gastos de este mes de las suscripciones que ya se cobraron (su día ya llegó) y todavía no se cargaron
+export const subPendientes = (subs, txs, hoy) => subs.map(s => subExpense(s, ym(hoy))).filter(t => t.fecha <= hoy && !txs.some(x => x.id === t.id));
+
+// ---------- Leer una factura: el texto copiado de la foto (en el iPhone, con Texto en vivo) ----------
+// shortcut: reconoce las empresas grandes y los rótulos comunes ("Total a pagar", "Consumo … kWh / m3", "Lectura actual"); sumar acá las que no lea
+const EMPRESAS = [
+  [/edenor/i, 'Edenor', 'Luz'], [/edesur/i, 'Edesur', 'Luz'], [/\bepec\b/i, 'EPEC', 'Luz'], [/edelap/i, 'Edelap', 'Luz'], [/\bedea\b/i, 'EDEA', 'Luz'],
+  [/edemsa/i, 'Edemsa', 'Luz'], [/\bepe\b/i, 'EPE', 'Luz'], [/metrogas/i, 'Metrogas', 'Gas'], [/naturgy/i, 'Naturgy', 'Gas'], [/camuzzi/i, 'Camuzzi', 'Gas'],
+  [/litoral gas/i, 'Litoral Gas', 'Gas'], [/ecogas/i, 'Ecogas', 'Gas'], [/\baysa\b/i, 'AySA', 'Agua'], [/\babsa\b/i, 'ABSA', 'Agua'],
+  [/aguas cordobesas/i, 'Aguas Cordobesas', 'Agua'], [/aguas santafesinas/i, 'Aguas Santafesinas', 'Agua'],
+  [/telecentro/i, 'Telecentro', 'Internet'], [/fibertel/i, 'Fibertel', 'Internet'], [/movistar/i, 'Movistar', 'Internet'], [/\biplan\b/i, 'iPlan', 'Internet'],
+];
+// m³ también como lo devuelve la lectura de fotos (m3, m*, mts3); sin lookbehind, que los iPhone viejos no entienden
+const M3 = /(?:^|[^a-z])m(?:ts)?[3³*]/i, UNIDAD = new RegExp(`kwh|${M3.source}`, 'i');
+// Números de un renglón, sin las fechas (15/11/2026); peso = venía con "$" adelante
+const numeros = linea => [...linea.replace(/\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/g, ' ').matchAll(/(\$\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)/g)]
+  .map(m => ({ v: parseMonto(m[2]), peso: !!m[1] }));
+// Devuelve solo lo que encontró: { descripcion, categoria, monto, consumo, lectura }
+export function leerFactura(texto) {
+  texto = String(texto);
+  const lineas = texto.split(/\r?\n/), out = {};
+  const emp = EMPRESAS.find(([re]) => re.test(texto));
+  if (emp) [, out.descripcion, out.categoria] = emp;
+  // Total: el mayor monto de los renglones con "total" (no subtotal ni consumo total); si alguno trae "$", solo esos
+  const totales = lineas.filter(l => /total/i.test(l) && !/sub\s*total/i.test(l) && !UNIDAD.test(l)).flatMap(numeros);
+  const montos = (totales.some(n => n.peso) ? totales.filter(n => n.peso) : totales).map(n => n.v).filter(v => v > 0);
+  if (montos.length) out.monto = Math.max(...montos);
+  const lc = lineas.find(l => /consumo/i.test(l) && UNIDAD.test(l)) ?? lineas.find(l => /\d/.test(l) && UNIDAD.test(l));
+  const consumo = lc && numeros(lc)[0];
+  if (consumo) out.consumo = consumo.v;
+  const ll = lineas.find(l => /lectura\s*actual/i.test(l)), lectura = ll && numeros(ll)[0];
+  if (lectura) out.lectura = lectura.v;
+  // Sin empresa conocida: la unidad dice qué servicio es
+  const cat = /kwh/i.test(texto) ? 'Luz' : !M3.test(texto) ? null : /agua/i.test(texto) ? 'Agua' : /gas/i.test(texto) ? 'Gas' : null;
+  if (!out.categoria && cat) out.categoria = cat;
+  return out;
+}
+
 export const REDES = ['Visa', 'Mastercard', 'American Express'];
 export const TIPOS = ['credito', 'debito'];
 export const MONEDAS = ['ARS', 'USD'];
@@ -111,24 +167,29 @@ export const checkCard = c => str(c.id) && str(c.banco) && REDES.includes(c.red)
   /^\d{4}$/.test(c.ultimos4) && /^#[0-9a-f]{6}$/i.test(c.color);
 export const checkTx = t => str(t.id) && Number.isFinite(t.monto) && t.monto > 0 && MONEDAS.includes(t.moneda) &&
   str(t.descripcion) && str(t.categoria) && /^\d{4}-\d{2}-\d{2}$/.test(t.fecha) &&
-  Number.isInteger(t.cuotas) && t.cuotas >= 1 && t.cuotas <= 72 && (t.cardId === null || str(t.cardId));
+  Number.isInteger(t.cuotas) && t.cuotas >= 1 && t.cuotas <= 72 && (t.cardId === null || str(t.cardId)) && optNum(t.consumo) && optNum(t.lectura);
+const optNum = v => v === undefined || (Number.isFinite(v) && v >= 0); // consumo y lectura: opcionales
 export const checkSaving = s => str(s.id) && Number.isFinite(s.monto) && s.monto !== 0 && MONEDAS.includes(s.moneda) &&
   str(s.categoria) && typeof s.descripcion === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.fecha);
 // Ingreso (sueldo, freelance…): siempre positivo, con concepto y fecha
 export const checkIncome = i => str(i.id) && Number.isFinite(i.monto) && i.monto > 0 && MONEDAS.includes(i.moneda) &&
   str(i.descripcion) && /^\d{4}-\d{2}-\d{2}$/.test(i.fecha);
+export const checkSub = s => str(s.id) && str(s.nombre) && Number.isFinite(s.monto) && s.monto > 0 && MONEDAS.includes(s.moneda) &&
+  Number.isInteger(s.dia) && s.dia >= 1 && s.dia <= 31 && (s.cardId === null || str(s.cardId));
 
 // Valida un backup importado y se queda solo con los campos conocidos (así nunca entra, p. ej., un número de tarjeta completo).
-// Los backups viejos no traen "savings" ni "incomes" (se importan con la lista vacía) ni el tipo de tarjeta (cuentan como crédito).
+// Los backups viejos no traen "savings", "incomes" ni "subscriptions" (se importan con la lista vacía) ni el tipo de tarjeta (cuentan como crédito).
 export function cleanBackup(d) {
   try {
     const cards = d.cards.map(({ id, banco, red, tipo = 'credito', ultimos4, color }) => ({ id, banco, red, tipo, ultimos4, color }));
-    const transactions = d.transactions.map(({ id, monto, moneda, descripcion, categoria, fecha, cardId = null, cuotas }) =>
-      ({ id, monto, moneda, descripcion, categoria, fecha, cardId, cuotas }));
+    // consumo y lectura solo existen en gastos de luz, gas o agua
+    const transactions = d.transactions.map(({ id, monto, moneda, descripcion, categoria, fecha, cardId = null, cuotas, consumo, lectura }) =>
+      ({ id, monto, moneda, descripcion, categoria, fecha, cardId, cuotas, ...(consumo !== undefined && { consumo }), ...(lectura !== undefined && { lectura }) }));
     const savings = (d.savings ?? []).map(({ id, monto, moneda, categoria, descripcion = '', fecha }) => ({ id, monto, moneda, categoria, descripcion, fecha }));
     const incomes = (d.incomes ?? []).map(({ id, monto, moneda, descripcion, fecha }) => ({ id, monto, moneda, descripcion, fecha }));
-    return cards.every(checkCard) && transactions.every(checkTx) && savings.every(checkSaving) && incomes.every(checkIncome)
-      ? { cards, transactions, savings, incomes } : null;
+    const subscriptions = (d.subscriptions ?? []).map(({ id, nombre, monto, moneda, dia, cardId = null }) => ({ id, nombre, monto, moneda, dia, cardId }));
+    return cards.every(checkCard) && transactions.every(checkTx) && savings.every(checkSaving) && incomes.every(checkIncome) && subscriptions.every(checkSub)
+      ? { cards, transactions, savings, incomes, subscriptions } : null;
   } catch {
     return null;
   }

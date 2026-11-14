@@ -8,8 +8,9 @@ const CARDS = [
 ];
 const GASTOS = [
   ['Supermercado Coto', 'Supermercado', 52000], ['Carga de nafta', 'Transporte', 45000], ['Pedido de sushi', 'Comida', 21000],
-  ['Luz y gas', 'Servicios', 31000], ['Farmacia', 'Salud', 12500], ['Cine con amigos', 'Ocio', 16000],
-  ['Verdulería', 'Supermercado', 9800], ['Internet y celular', 'Servicios', 28000], ['Café y medialunas', 'Comida', 6500], ['Carga SUBE', 'Transporte', 10000],
+  ['Edenor', 'Luz', 31000, 250], ['Farmacia', 'Salud', 12500], ['Cine con amigos', 'Ocio', 16000],
+  ['Verdulería', 'Supermercado', 9800], ['Telecentro', 'Internet', 28000], ['Café y medialunas', 'Comida', 6500], ['Carga SUBE', 'Transporte', 10000],
+  ['Metrogas', 'Gas', 18000, 40], ['AySA', 'Agua', 9500, 14], // el 4.º dato es el consumo (kWh o m³)
 ];
 // [meses atrás, descripción, categoría, monto total, cuotas, tarjeta]
 const EN_CUOTAS = [
@@ -27,10 +28,14 @@ export function sampleData(now = new Date()) {
   const fecha = (back, day) => today(new Date(now.getFullYear(), now.getMonth() - back, back ? day : Math.min(day, now.getDate())));
   const pago = [...CARDS.map(c => c.id), null];
   const transactions = [];
-  for (let back = 6; back >= 0; back--) GASTOS.forEach(([descripcion, categoria, monto], i) => transactions.push({
-    id: `demo-${back}-${i}`, monto: Math.round(monto * (0.75 + ((i * 7 + back * 3) % 6) / 10)), moneda: 'ARS',
-    descripcion, categoria, fecha: fecha(back, 1 + (i * 3 + back) % 28), cardId: pago[(i + back) % 4], cuotas: 1,
-  }));
+  for (let back = 6; back >= 0; back--) GASTOS.forEach(([descripcion, categoria, monto, consumo], i) => {
+    const k = 0.75 + ((i * 7 + back * 3) % 6) / 10; // cada mes un poco distinto; el consumo sube y baja con lo que se paga
+    transactions.push({
+      id: `demo-${back}-${i}`, monto: Math.round(monto * k), moneda: 'ARS',
+      descripcion, categoria, fecha: fecha(back, 1 + (i * 3 + back) % 28), cardId: pago[(i + back) % 4], cuotas: 1,
+      ...(consumo && { consumo: Math.round(consumo * k) }),
+    });
+  });
   EN_CUOTAS.forEach(([back, descripcion, categoria, monto, cuotas, card], i) => transactions.push({
     id: `demo-c${i}`, monto, moneda: 'ARS', descripcion, categoria, fecha: fecha(back, 10), cardId: CARDS[card].id, cuotas,
   }));
@@ -41,5 +46,11 @@ export function sampleData(now = new Date()) {
     id: `demo-i${back}`, monto: Math.round(1200000 * 1.03 ** (6 - back) / 1000) * 1000, moneda: 'ARS', descripcion: 'Sueldo', fecha: fecha(back, 1),
   }));
   incomes.push({ id: 'demo-i-free', monto: 400, moneda: 'USD', descripcion: 'Trabajo freelance', fecha: fecha(2, 18) });
-  return { cards: CARDS, transactions, savings, incomes };
+  const subscriptions = [
+    { id: 'demo-s-netflix', nombre: 'Netflix', monto: 11999, moneda: 'ARS', dia: 5, cardId: 'demo-galicia' },
+    { id: 'demo-s-disney', nombre: 'Disney+', monto: 9499, moneda: 'ARS', dia: 12, cardId: 'demo-santander' },
+    { id: 'demo-s-spotify', nombre: 'Spotify', monto: 4499, moneda: 'ARS', dia: 20, cardId: 'demo-galicia' },
+    { id: 'demo-s-claude', nombre: 'Claude', monto: 20, moneda: 'USD', dia: 25, cardId: 'demo-bbva' },
+  ];
+  return { cards: CARDS, transactions, savings, incomes, subscriptions };
 }

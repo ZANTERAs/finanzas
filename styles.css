@@ -74,7 +74,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   touch-action: manipulation; /* sin zoom por doble toque */
-  scroll-padding: calc(env(safe-area-inset-top) + 64px) 0 calc(env(safe-area-inset-bottom) + 96px); /* lo enfocado no queda bajo "Atrás" ni el "+" */
+  scroll-padding: calc(env(safe-area-inset-top) + 64px) 0 calc(env(safe-area-inset-bottom) + 96px); /* lo enfocado no queda bajo "Atrás" ni los botones redondos */
 }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 body {
@@ -175,7 +175,7 @@ progress::-moz-progress-bar { background: var(--accent-grad); }
 fieldset { border: 0; padding: 0; margin: 0 0 12px; min-width: 0; }
 legend { font-size: 13px; font-weight: 500; color: var(--ink-2); padding: 0; margin: 0 4px 6px; }
 label { display: block; font-size: 13px; font-weight: 500; color: var(--ink-2); margin-bottom: 14px; }
-input, select {
+input, select, textarea {
   display: block; width: 100%; height: 50px; margin-top: 6px; padding: 0 14px;
   font: inherit; font-size: 17px; color: var(--ink); background-color: var(--field);
   border: 1px solid var(--glass-border); border-radius: 3.5px; appearance: none; -webkit-appearance: none;
@@ -192,6 +192,15 @@ select {
 }
 /* Filtros de Gastos: dos por renglón; menos relleno para que entre "Efectivo/débito" */
 #filtros select { padding: 0 28px 0 12px; background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; }
+textarea { height: auto; padding: 12px 14px; resize: vertical; }
+/* Leer una factura: cerrado es un renglón arriba del formulario */
+.factura summary { cursor: pointer; font-weight: 600; color: var(--ink); min-height: 24px; }
+.factura[open] summary { margin-bottom: 12px; }
+.factura .btn { margin-bottom: 0; }
+.factura .btn.file { margin-bottom: 14px; }
+.file.ocupado { opacity: .6; pointer-events: none; } /* mientras lee la foto */
+.factura .hint:last-child { margin: 10px 4px 0; }
+.factura .hint:last-child:empty { display: none; }
 input[type=date] { line-height: 50px; }
 input[type=date]::-webkit-date-and-time-value { text-align: left; } /* iOS la centra */
 input[type=color] { padding: 4px; }
@@ -202,7 +211,7 @@ input[name=monto] { height: 66px; font-size: 34px; font-weight: 300; letter-spac
 .seg.moneda { flex: none; width: 128px; margin: 0; }
 .seg.moneda span { height: 56px; font-size: 14px; letter-spacing: .02em; }
 /* Foco: anillo luminoso. El outline transparente sigue apareciendo en el modo de alto contraste. */
-input:focus-visible, select:focus-visible { outline: 2px solid transparent; border-color: var(--accent); box-shadow: 0 0 0 4px var(--glow); }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid transparent; border-color: var(--accent); box-shadow: 0 0 0 4px var(--glow); }
 .row { display: flex; gap: 12px; }
 .row > * { flex: 1; min-width: 0; }
 .btn {
@@ -217,6 +226,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid transparent; bord
 }
 .btn.danger { color: var(--bad); }
 .file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; } /* el input está oculto: el foco se ve en el botón */
 
 /* Respuesta al tocar: se achica apenas, como en iOS. Solo se animan transform y opacity. */
 :is(.btn, .fab, .item[href], .bank-card, .menu-row, .cat-link, .back, .tile) { transition: transform .25s var(--ease), opacity .25s var(--ease); }
@@ -287,6 +297,10 @@ input:focus-visible, select:focus-visible { outline: 2px solid transparent; bord
 .split { display: grid; gap: 8px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); }
 .split dt { font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
 .split dd { margin: 2px 0 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Consumos: una tarjeta por servicio con dos cifras lado a lado y su gráfico */
+.servicio .split { grid-template-columns: 1fr 1fr; margin: 0; padding: 0; border: 0; }
+.servicio .cap { font-size: 13px; margin: 14px 0 8px; }
+.chart-wrap.chico { height: 170px; }
 /* "Por categoría" se toca para abrir el detalle: flechita junto al título, como las filas de menú */
 .cat-link { display: block; color: inherit; text-decoration: none; }
 .cat-link :is(h2, .eyebrow) { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
@@ -321,7 +335,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid transparent; bord
   position: fixed; z-index: 11; inset: calc(env(safe-area-inset-top) + 8px) 0 0; max-width: 640px; margin: 0 auto;
   overflow-y: auto; overscroll-behavior: contain;
   padding: 4px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 110px) calc(env(safe-area-inset-left) + 16px);
-  scroll-padding: 56px 0 96px; /* lo enfocado no queda bajo "Atrás" ni el "+" */
+  scroll-padding: 56px 0 96px; /* lo enfocado no queda bajo "Atrás" ni los botones redondos */
   background: var(--sheet); -webkit-backdrop-filter: blur(30px) saturate(160%); backdrop-filter: blur(30px) saturate(160%);
   border: 1px solid var(--glass-border); border-bottom: 0; border-radius: 6px 6px 0 0;
   box-shadow: 0 -12px 40px rgba(0, 0, 0, .35);
@@ -344,7 +358,7 @@ body:has(.sheet:not([hidden])) #pagina { transform: scale(.94); opacity: .4; }
 .back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
 .back:disabled { opacity: .35; cursor: default; }
 
-/* Botón flotante "Nuevo gasto" (se oculta en el propio formulario) */
+/* Botones flotantes: "Nuevo gasto" a la derecha y "con la foto de una factura" a la izquierda (se ocultan en el propio formulario) */
 .fab {
   position: fixed; z-index: 11; right: max(16px, env(safe-area-inset-right));
   bottom: max(20px, calc(env(safe-area-inset-bottom) + 10px));
@@ -352,7 +366,8 @@ body:has(.sheet:not([hidden])) #pagina { transform: scale(.94); opacity: .4; }
   background: var(--accent-grad); color: var(--on-accent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 12px 30px -8px var(--glow), 0 0 24px -6px var(--glow);
 }
-.fab svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.fab svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fab.foto { right: auto; left: max(16px, env(safe-area-inset-left)); cursor: pointer; } /* la cámara, abajo a la izquierda */
 body[data-view=nuevo] .fab { display: none; }
 
 /* Control segmentado (Guardé/Saqué, Pesos/Dólares): la "perilla" se desliza hasta la opción elegida */

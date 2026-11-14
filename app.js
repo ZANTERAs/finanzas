@@ -3,10 +3,11 @@ import {
   today, ym, addMonths, money, parseMonto, cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, sum,
   REDES, MONEDAS, checkCard, checkTx, cleanBackup, savingsByCategory, checkSaving, newId, byDateDesc, cashWithdrawal, fromAccount, formatMontoTexto, monthSplit,
   monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkIncome,
+  UNIDADES, subExpense, subPendientes, checkSub, leerFactura, SERVICIOS, consumoPorMes,
 } from './calc.js';
 import { sampleData } from './sample.js';
 
-const CATEGORIAS = ['Supermercado', 'Comida', 'Transporte', 'Servicios', 'Hogar', 'Salud', 'Ropa', 'Ocio', 'Viajes', 'Educación', 'Tecnología', 'Otros'];
+const CATEGORIAS = ['Supermercado', 'Comida', 'Transporte', 'Servicios', 'Luz', 'Gas', 'Agua', 'Internet', 'Suscripciones', 'Hogar', 'Salud', 'Ropa', 'Ocio', 'Viajes', 'Educación', 'Tecnología', 'Otros'];
 // Colores aproximados de cada banco; se pueden cambiar al cargar la tarjeta.
 const BANCOS = {
   Galicia: '#f37021', Santander: '#ec0000', BBVA: '#004481', Macro: '#002f6c', 'Nación': '#0072bb', Provincia: '#00843d',
@@ -16,17 +17,18 @@ const BANCOS = {
 
 const AHORRO_SUGERIDAS = ['Cuenta de ahorros', 'Pago celular', 'Futuro viaje', 'Emergencias'];
 const INGRESO_SUGERIDOS = ['Sueldo', 'Aguinaldo', 'Trabajo freelance', 'Bono'];
+const SUB_SUGERIDAS = ['Netflix', 'Disney+', 'Spotify', 'Claude', 'ChatGPT', 'YouTube Premium', 'Amazon Prime Video', 'Max', 'iCloud+', 'Google One'];
 
 // Un guardado que falla (sin espacio, base cortada) se avisa en vez de no hacer nada.
 addEventListener('unhandledrejection', e =>
   alert(`No se pudo completar la acción (${e.reason?.message ?? e.reason}). Probá de nuevo; si sigue fallando, cerrá y volvé a abrir la app.`));
 
-let cards = [], txs = [], savings = [], incomes = [], editTx = null, editCard = null, editSaving = null, editIncome = null, histSel = null;
+let cards = [], txs = [], savings = [], incomes = [], subs = [], editTx = null, editCard = null, editSaving = null, editIncome = null, editSub = null, histSel = null;
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const empty = msg => `<li class="empty">${msg}</li>`;
 const reload = async () => {
-  [cards, txs, savings, incomes] = await loadAll();
+  [cards, txs, savings, incomes, subs] = await loadAll();
   cards.sort((a, b) => a.banco.localeCompare(b.banco, 'es')); // la base las devuelve por id (al azar)
 };
 const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
@@ -47,6 +49,8 @@ const menuVal = (sel, lines, caption) => {
 };
 // Compras en cuotas que todavía tienen cuotas por pagar (la usan la hoja Cuotas y su fila del menú)
 const cuotasActivas = cur => txs.filter(t => t.cuotas > 1).map(t => ({ t, ...cuotaStatus(t, cur) })).filter(x => x.restantes > 0);
+// Un monto guardado, como se ve en el campo: 9876.5 → "9.876,50" (con centavos, siempre los dos)
+const montoTexto = v => formatMontoTexto(Number.isInteger(v) ? String(v) : v.toFixed(2).replace('.', ','));
 // Campo Monto: se formatea mientras escribís (700000 → 700.000) sin mover el cursor de entre las cifras.
 function montoVivo(input) {
   input.addEventListener('input', () => {
@@ -91,9 +95,11 @@ const cardFace = c => `<span class="top"><span class="bank">${esc(c.banco)}</spa
 const cardOf = t => cards.find(c => c.id === t.cardId);
 const cardLabel = t => { const c = cardOf(t); return c ? `${c.banco} ${c.ultimos4}` : t.cardId ? 'Tarjeta borrada' : 'Efectivo / transferencia'; };
 
+const numTxt = n => n.toLocaleString('es-AR'); // 10500 → "10.500", 12.5 → "12,5" (y parseMonto lo vuelve a leer)
+const consumoTxt = t => t.consumo !== undefined ? ` ${numTxt(t.consumo)} ${UNIDADES[t.categoria] ?? ''}` : '';
 const txItem = (t, amount, extra = '') => `<li><a class="item" href="#nuevo/${esc(t.id)}">
   <span class="dot" style="${cardOf(t) ? `background:${cardOf(t).color}` : ''}"></span>
-  <span class="grow"><b>${esc(t.descripcion)}</b><small>${esc(t.categoria)} · ${fmtDate(t.fecha)} · ${esc(cardLabel(t))}${extra}</small></span>
+  <span class="grow"><b>${esc(t.descripcion)}</b><small>${esc(t.categoria)}${consumoTxt(t)} · ${fmtDate(t.fecha)} · ${esc(cardLabel(t))}${extra}</small></span>
   <span class="amt">${money(amount, t.moneda)}</span></a></li>`;
 
 const delta = (a, b) => {
@@ -125,13 +131,14 @@ function carousel(list, dots, onCurrent) {
 // ---------- Gráficos ----------
 const charts = {};
 // compact: el gráfico chico de la página principal (sin eje de montos, barras finas; el monto va en el globo al tocar)
-function barChart(id, labels, data, { horizontal = false, highlight = -1, onPick, compact = false } = {}) {
+// fmt: cómo se lee cada valor (plata por defecto; los consumos van en kWh o m³)
+function barChart(id, labels, data, { horizontal = false, highlight = -1, onPick, compact = false, fmt = money } = {}) {
   const css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
   charts[id]?.destroy();
   // Los valores también para lectores de pantalla (el canvas solo se ve)
   const canvas = document.getElementById(id);
   canvas.dataset.label ??= canvas.getAttribute('aria-label');
-  canvas.setAttribute('aria-label', `${canvas.dataset.label}: ${labels.map((l, i) => data[i] ? `${l} ${money(data[i])}` : '').filter(Boolean).join(', ')}`);
+  canvas.setAttribute('aria-label', `${canvas.dataset.label}: ${labels.map((l, i) => data[i] ? `${l} ${fmt(data[i])}` : '').filter(Boolean).join(', ')}`);
   const valueAxis = { display: !compact, grid: { color: v('--grid') }, border: { display: false }, ticks: { color: v('--muted'), maxTicksLimit: 5, callback: n => n.toLocaleString('es-AR', { notation: 'compact' }) } };
   // Hasta 12 rótulos se ven todos (los meses de Historial); más (los días del mes) se salta algunos para que no se pisen
   const catAxis = { grid: { display: false }, border: { color: v('--axis') }, ticks: { color: v('--ink-2'), font: { size: horizontal && !compact ? 13 : 11 }, autoSkip: labels.length > 12, maxRotation: 0 } };
@@ -146,7 +153,7 @@ function barChart(id, labels, data, { horizontal = false, highlight = -1, onPick
       interaction: { mode: 'index', intersect: false, axis: horizontal ? 'y' : 'x' },
       plugins: { legend: { display: false }, tooltip: {
         displayColors: false, backgroundColor: v('--solid'), titleColor: v('--ink-2'), bodyColor: v('--ink'),
-        borderColor: v('--glass-border'), borderWidth: 1, cornerRadius: 3, padding: 10, callbacks: { label: c => money(c.raw) },
+        borderColor: v('--glass-border'), borderWidth: 1, cornerRadius: 3, padding: 10, callbacks: { label: c => fmt(c.raw) },
       } },
       scales: horizontal ? { x: valueAxis, y: catAxis } : { x: catAxis, y: valueAxis },
       onClick: onPick && ((e, els) => els[0] && onPick(els[0].index)),
@@ -198,6 +205,9 @@ const views = {
       ...monCuotas.map(m => `${cuotasDe(m, 'esteMes')} <small>este mes</small>`),
       ...monCuotas.map(m => `${cuotasDe(m, 'restante')} <small>en total</small>`),
     ], '');
+    menuVal('#mv-suscripciones', usadas(subs).map(m => money(sum(subs.filter(s => s.moneda === m).map(s => s.monto)), m)), 'por mes');
+    const serv = txs.filter(t => SERVICIOS.includes(t.categoria));
+    menuVal('#mv-consumos', usadas(serv.filter(t => shareInMonth(t, cur))).map(m => money(monthTotal(serv, cur, m), m)), 'este mes');
     menuVal('#mv-ahorros', usadas(savings).map(m => money(sum(savings.filter(s => s.moneda === m).map(s => s.monto)), m)), 'ahorrado');
     const ingMes = incomes.filter(i => ym(i.fecha) === cur);
     menuVal('#mv-ingresos', usadas(ingMes).map(m => money(sum(ingMes.filter(i => i.moneda === m).map(i => i.monto)), m)), 'este mes');
@@ -276,10 +286,15 @@ const views = {
     pagoHint();
     const cats = t && !CATEGORIAS.includes(t.categoria) ? [...CATEGORIAS, t.categoria] : CATEGORIAS;
     f.categoria.innerHTML = cats.map(c => `<option>${esc(c)}</option>`).join('');
-    f.monto.value = t ? formatMontoTexto(String(t.monto).replace('.', ',')) : '';
+    f.monto.value = t ? montoTexto(t.monto) : '';
     f.moneda.value = t?.moneda || 'ARS';
     f.descripcion.value = t?.descripcion || '';
-    f.categoria.value = t?.categoria || CATEGORIAS[0];
+    f.categoria.value = t?.categoria || (id === 'servicio' ? 'Luz' : CATEGORIAS[0]); // #nuevo/servicio: desde Consumos, ya con los campos de consumo
+    f.consumo.value = t?.consumo !== undefined ? numTxt(t.consumo) : '';
+    f.lectura.value = t?.lectura !== undefined ? numTxt(t.lectura) : '';
+    consumoFields();
+    $('#factura').open = false;
+    $('#factura-resultado').textContent = '';
     f.fecha.value = t?.fecha || today();
     f.fecha.max = today(); // un año mal elegido (2062) dejaría el gasto fuera de todos los totales
     f.cuotas.value = t?.cuotas || 1;
@@ -321,6 +336,60 @@ const views = {
     }).join('');
     const s = savings.find(x => x.id === id);
     id === 'nuevo' ? openSavingForm() : s ? openSavingForm(s) : closeSavingForm();
+  },
+
+  // Suscripciones: lo que suman por mes y cada una con su estado este mes (cargada, falta cargarla o cuándo se cobra).
+  // Las que ya se cobraron y no están en los gastos se cargan juntas con un botón.
+  suscripciones(id) {
+    const hoy = today(), cur = ym(hoy), mes = monthName(cur).split(' ')[0];
+    porMoneda('#subs-total', m => sum(subs.filter(s => s.moneda === m).map(s => s.monto)), usadas(subs));
+    const pend = subPendientes(subs, txs, hoy);
+    $('#subs-cargar').hidden = !pend.length;
+    $('#subs-cargar').textContent = pend.length === 1 ? `Cargar el gasto de ${pend[0].descripcion} de ${mes}` : `Cargar los ${pend.length} gastos de ${mes}`;
+    $('#sub-sugeridas').innerHTML = SUB_SUGERIDAS.map(c => `<option value="${esc(c)}">`).join('');
+    $('#subs-lista').innerHTML = [...subs].sort((a, b) => a.dia - b.dia || a.nombre.localeCompare(b.nombre, 'es')).map(s => {
+      const t = subExpense(s, cur);
+      const estado = txs.some(x => x.id === t.id) ? 'cargada este mes' : t.fecha <= hoy ? 'falta cargarla' : `se cobra el ${Number(t.fecha.slice(8))}`;
+      return `<li><a class="item" href="#suscripciones/${esc(s.id)}">
+      <span class="dot" style="${cardOf(s) ? `background:${cardOf(s).color}` : ''}"></span>
+      <span class="grow"><b>${esc(s.nombre)}</b><small>${esc(cardLabel(s))} · ${estado}</small></span>
+      <span class="amt">${money(s.monto, s.moneda)}</span></a></li>`;
+    }).join('') || empty('Todavía no cargaste suscripciones.');
+    const s = subs.find(x => x.id === id);
+    id === 'nueva' ? openSubForm() : s ? openSubForm(s) : closeSubForm();
+  },
+
+  // Consumos: los servicios de la casa. Arriba el gasto de todos por mes; abajo una tarjeta por servicio con lo de este mes,
+  // el promedio por mes y su gráfico: consumo (kWh o m³) si las facturas lo traen, si no lo que se pagó.
+  consumos() {
+    const cur = ym(today()), serv = txs.filter(t => SERVICIOS.includes(t.categoria));
+    porMoneda('#consumos-total', m => monthTotal(serv, cur, m), usadas(serv.filter(t => shareInMonth(t, cur))));
+    // Hasta 12 meses, desde el primero con datos
+    const primero = serv.reduce((min, t) => ym(t.fecha) < min ? ym(t.fecha) : min, cur);
+    const months = monthRange(primero > addMonths(cur, -11) ? primero : addMonths(cur, -11), cur), labels = months.map(monthShort);
+    $('#chart-consumos').closest('.box').hidden = !serv.length;
+    barChart('chart-consumos', labels, months.map(m => monthTotal(serv, m)), { highlight: months.length - 1 });
+    const cats = SERVICIOS.filter(c => serv.some(t => t.categoria === c));
+    $('#consumos-servicios').innerHTML = cats.map(c => {
+      const xs = serv.filter(t => t.categoria === c), last = [...xs].sort(byDateDesc)[0], u = UNIDADES[c];
+      const conConsumo = xs.some(t => t.consumo !== undefined);
+      // Promedio por mes desde la primera factura (luz y gas bimestrales: es lo que cuestan por mes de verdad)
+      const desde = months.find(m => monthTotal(xs, m)), meses = desde ? months.slice(months.indexOf(desde)) : [];
+      const prom = meses.length ? Math.round(sum(meses.map(m => monthTotal(xs, m))) / meses.length) : 0;
+      return `<div class="box servicio">
+        <h2>${c === 'Servicios' ? 'Otros servicios' : esc(c)}</h2>
+        <dl class="split"><div><dt>Este mes</dt><dd>${money(monthTotal(xs, cur))}</dd></div><div><dt>Promedio por mes</dt><dd>${money(prom)}</dd></div></dl>
+        <p class="muted cap">Última: ${esc(last.descripcion)} · ${fmtDate(last.fecha)}${last.consumo !== undefined ? ` · ${numTxt(last.consumo)} ${u}` : ''}</p>
+        <p class="muted cap">${conConsumo ? `Consumo por mes (${u})` : 'Pagado por mes'}</p>
+        <div class="chart-wrap chico"><canvas id="chart-serv-${c}" role="img" aria-label="${conConsumo ? `Consumo de ${c.toLowerCase()} por mes` : `Pagado en ${c.toLowerCase()} por mes`}"></canvas></div>
+      </div>`;
+    }).join('') || '<p class="empty">Todavía no hay gastos de luz, gas, agua o internet. Cargalos como un gasto con esa categoría, o con la foto de la factura.</p>';
+    for (const c of cats) {
+      const xs = serv.filter(t => t.categoria === c), u = UNIDADES[c];
+      xs.some(t => t.consumo !== undefined)
+        ? barChart(`chart-serv-${c}`, labels, consumoPorMes(xs, c, months), { highlight: months.length - 1, fmt: v => `${numTxt(v)} ${u}` })
+        : barChart(`chart-serv-${c}`, labels, months.map(m => monthTotal(xs, m)), { highlight: months.length - 1 });
+    }
   },
 
   // Ingresos (sueldo, freelance…): arriba lo cobrado este mes; abajo todos, del más nuevo al más viejo
@@ -444,6 +513,91 @@ function pagoHint() {
   $('#pago-hint').textContent = `Se descuenta de “${cuentaDe()}”, en Ahorros.`;
 }
 
+// Guarda gastos. Los de efectivo / transferencia o débito además se descuentan de la cuenta de ahorros
+// (si un gasto pasa a crédito, ese descuento se borra). Todo junto: o se guarda todo o nada.
+const txWrite = ts => write({
+  put: { transactions: ts, savings: ts.filter(t => fromAccount(t, cards)).map(t => cashWithdrawal(t, cuentaDe())) },
+  del: { savings: ts.filter(t => !fromAccount(t, cards)).map(t => `gasto-${t.id}`) },
+});
+
+// Luz, gas y agua muestran Consumo (con su unidad) y Lectura del medidor
+function consumoFields() {
+  const u = UNIDADES[txForm.categoria.value];
+  $('#consumo-row').hidden = !u;
+  $('#consumo-unidad').textContent = u ? `(${u})` : '';
+}
+txForm.categoria.addEventListener('change', consumoFields);
+
+// Leer una factura: completa lo que encuentra en el texto (pegado o leído de la foto); no pisa una descripción ya escrita
+$('#factura-leer').addEventListener('click', completarConFactura);
+function completarConFactura() {
+  const f = txForm, r = leerFactura(f.factura.value), hecho = [];
+  if (r.categoria) { f.categoria.value = r.categoria; consumoFields(); hecho.push(r.categoria); }
+  if (r.descripcion && !f.descripcion.value.trim()) f.descripcion.value = r.descripcion;
+  if (r.monto) { f.monto.value = montoTexto(r.monto); f.moneda.value = 'ARS'; hecho.push(`total ${money(r.monto)}`); }
+  if (r.consumo !== undefined) { f.consumo.value = numTxt(r.consumo); hecho.push(`consumo ${numTxt(r.consumo)} ${UNIDADES[f.categoria.value] ?? ''}`.trim()); }
+  if (r.lectura !== undefined) { f.lectura.value = numTxt(r.lectura); hecho.push(`lectura ${numTxt(r.lectura)}`); }
+  cuotaHint();
+  if (hecho.length) dirty = true; // lo leído se perdería al salir sin guardar: que avise
+  $('#factura-resultado').textContent = hecho.length
+    ? `Completé: ${hecho.join(', ')}. Revisalo antes de guardar.`
+    : 'No encontré el total ni el consumo en ese texto. Probá copiarlo de nuevo o completalo a mano.';
+}
+
+// Foto de la factura → texto, con Tesseract (en vendor/tesseract: funciona sin internet y la foto no sale del teléfono).
+// El lector (~10 MB) se carga recién la primera vez que se usa; después queda listo.
+let lector = null;
+const ocrBase = new URL('vendor/tesseract/', location.href).href;
+const cargarLector = () => lector ??= new Promise((res, rej) => {
+  const s = Object.assign(document.createElement('script'), { src: `${ocrBase}tesseract.min.js` });
+  s.onload = () => res(Tesseract.createWorker('spa', 1, {
+    workerPath: `${ocrBase}worker.min.js`, corePath: ocrBase, langPath: ocrBase, workerBlobURL: false, cacheMethod: 'none',
+    logger: m => { if (m.status === 'recognizing text') $('#factura-resultado').textContent = `Leyendo la foto… ${Math.round(m.progress * 100)}%`; },
+  }).then(async w => {
+    // Modo 4 (una columna, letras de distintos tamaños): cada rótulo queda con su monto en el mismo renglón
+    // y lee los títulos grandes, como el nombre de la empresa (el 6, el que viene, se los saltea)
+    await w.setParameters({ tessedit_pageseg_mode: '4' });
+    return w;
+  }));
+  s.onerror = () => rej(new Error('no se pudo cargar el lector'));
+  document.head.append(s);
+}).catch(err => { lector = null; throw err; }); // si falló, el próximo intento vuelve a probar
+// Las fotos del iPhone son enormes: a 2000 px del lado largo se leen igual de bien y mucho más rápido
+async function achicarFoto(file) {
+  const img = await createImageBitmap(file), k = Math.min(1, 2000 / Math.max(img.width, img.height));
+  const c = Object.assign(document.createElement('canvas'), { width: Math.round(img.width * k), height: Math.round(img.height * k) });
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+async function leerFoto(file) {
+  const out = $('#factura-resultado'), input = $('#factura-foto'), boton = input.closest('label');
+  $('#factura').open = true;
+  boton.classList.add('ocupado');
+  input.disabled = true;
+  out.textContent = 'Preparando el lector… (la primera vez tarda unos segundos)';
+  try {
+    const worker = await cargarLector();
+    const { data } = await worker.recognize(await achicarFoto(file));
+    txForm.factura.value = data.text.trim();
+    completarConFactura();
+  } catch (err) {
+    out.textContent = `No pude leer la foto (${err?.message ?? err}). Probá con otra más nítida o pegá el texto.`;
+  } finally {
+    boton.classList.remove('ocupado');
+    input.disabled = false;
+  }
+}
+const fotoElegida = input => { const file = input.files[0]; input.value = ''; return file; }; // vaciarlo deja elegir la misma foto otra vez
+$('#factura-foto').addEventListener('change', e => { const file = fotoElegida(e.target); if (file) leerFoto(file); });
+// Botones de cámara (el redondo de abajo a la izquierda y el de Consumos): abren Nuevo gasto y leen la foto ahí
+for (const sel of ['#foto-rapida', '#consumo-foto']) $(sel).addEventListener('change', async e => {
+  const file = fotoElegida(e.target);
+  if (!file) return;
+  location.hash = '#nuevo';
+  await new Promise(r => addEventListener('hashchange', r, { once: true }));
+  if (current.view === 'nuevo') leerFoto(file); // si no, eligió quedarse en un formulario sin guardar
+});
+
 txForm.addEventListener('submit', busy(async () => {
   const f = txForm, picked = f.querySelector('[name=cardId]:checked');
   const t = {
@@ -459,11 +613,15 @@ txForm.addEventListener('submit', busy(async () => {
   };
   if (!(t.monto > 0)) return fieldError(f.monto, 'Ingresá un monto válido, por ejemplo 15.000 o 1500,50.');
   if (!t.descripcion) return fieldError(f.descripcion, 'Escribí una descripción, por ejemplo “Supermercado”.');
+  // Luz, gas o agua: consumo y lectura del medidor, si se completaron (en otra categoría no se guardan)
+  for (const k of ['consumo', 'lectura']) {
+    const v = f[k].value.trim();
+    if (!UNIDADES[t.categoria] || !v) { delete t[k]; continue; }
+    t[k] = parseMonto(v);
+    if (!(t[k] >= 0)) return fieldError(f[k], 'Escribí solo el número, por ejemplo 250.');
+  }
   if (!checkTx(t)) return alert('Revisá los datos: falta la fecha o la cantidad de cuotas (de 1 a 72).');
-  // Efectivo / transferencia o débito: además se descuenta de la cuenta de ahorros (si pasa a crédito, ese descuento se borra)
-  await write(fromAccount(t, cards)
-    ? { put: { transactions: [t], savings: [cashWithdrawal(t, cuentaDe())] } }
-    : { put: { transactions: [t] }, del: { savings: [`gasto-${t.id}`] } });
+  await txWrite([t]);
   await reload();
   leave('#inicio');
 }));
@@ -533,7 +691,7 @@ function openSavingForm(s) {
   $('#ahorro-titulo').textContent = s ? 'Editar ahorro' : 'Nuevo ahorro';
   savForm.tipo.value = s?.monto < 0 ? 'out' : 'in';
   savForm.moneda.value = s?.moneda || 'ARS';
-  savForm.monto.value = s ? formatMontoTexto(String(Math.abs(s.monto)).replace('.', ',')) : '';
+  savForm.monto.value = s ? montoTexto(Math.abs(s.monto)) : '';
   savForm.categoria.value = s?.categoria || '';
   savForm.descripcion.value = s?.descripcion || '';
   savForm.fecha.value = s?.fecha || today();
@@ -572,6 +730,52 @@ $('#ahorro-borrar').addEventListener('click', async () => {
   await backToAhorros();
 });
 
+// ---------- Suscripciones ----------
+const subForm = $('#sub-form');
+function openSubForm(s) {
+  editSub = s || null;
+  subForm.reset();
+  $('#sub-titulo').textContent = s ? 'Editar suscripción' : 'Nueva suscripción';
+  const borrada = s?.cardId && !cardOf(s);
+  subForm.cardId.innerHTML = cards.map(c => `<option value="${esc(c.id)}">${esc(c.banco)} ${esc(c.ultimos4)}</option>`).join('')
+    + (borrada ? `<option value="${esc(s.cardId)}">Tarjeta borrada</option>` : '') + '<option value="">Efectivo / transferencia</option>';
+  subForm.nombre.value = s?.nombre || '';
+  subForm.moneda.value = s?.moneda || 'ARS';
+  subForm.monto.value = s ? montoTexto(s.monto) : '';
+  subForm.dia.value = s?.dia || Number(today().slice(8));
+  subForm.cardId.value = s ? s.cardId ?? '' : cards[0]?.id ?? '';
+  $('#sub-borrar').hidden = !s;
+  $('#sub-nueva').hidden = true;
+  subForm.hidden = false;
+  subForm.scrollIntoView({ behavior: motion(), block: 'start' });
+}
+function closeSubForm() { subForm.hidden = true; $('#sub-nueva').hidden = false; editSub = null; dirty = false; }
+const backToSubs = async () => { await reload(); history.replaceState(null, '', '#suscripciones'); route(); };
+
+montoVivo(subForm.monto);
+$('#sub-cancelar').addEventListener('click', () => leave('#suscripciones'));
+subForm.addEventListener('submit', busy(async () => {
+  const monto = parseMonto(subForm.monto.value), nombre = subForm.nombre.value.trim(), dia = parseInt(subForm.dia.value, 10);
+  if (!nombre) return fieldError(subForm.nombre, 'Escribí el servicio, por ejemplo “Netflix”.');
+  if (!(monto > 0)) return fieldError(subForm.monto, 'Ingresá un monto válido, por ejemplo 11.999.');
+  if (!(dia >= 1 && dia <= 31)) return fieldError(subForm.dia, 'Elegí un día del 1 al 31.');
+  const s = { id: editSub?.id || newId(), nombre, monto, moneda: subForm.moneda.value, dia, cardId: subForm.cardId.value || null };
+  if (!checkSub(s)) return alert('Revisá los datos de la suscripción.');
+  await put('subscriptions', s);
+  await backToSubs();
+}));
+$('#sub-borrar').addEventListener('click', async () => {
+  if (!editSub || !confirm(`¿Borrar la suscripción a ${editSub.nombre}? Los gastos ya cargados se mantienen.`)) return;
+  await del('subscriptions', editSub.id);
+  await backToSubs();
+});
+$('#subs-cargar').addEventListener('click', async () => {
+  const pend = subPendientes(subs, txs, today());
+  if (!pend.length || !confirm(`Se cargan como gastos: ${pend.map(t => `${t.descripcion} ${money(t.monto, t.moneda)}`).join(', ')}. ¿Seguimos?`)) return;
+  await txWrite(pend);
+  await backToSubs();
+});
+
 // ---------- Ingresos ----------
 const incForm = $('#ingreso-form');
 function openIncomeForm(i) {
@@ -579,7 +783,7 @@ function openIncomeForm(i) {
   incForm.reset();
   $('#ingreso-titulo').textContent = i ? 'Editar ingreso' : 'Nuevo ingreso';
   incForm.moneda.value = i?.moneda || 'ARS';
-  incForm.monto.value = i ? formatMontoTexto(String(i.monto).replace('.', ',')) : '';
+  incForm.monto.value = i ? montoTexto(i.monto) : '';
   incForm.descripcion.value = i?.descripcion || '';
   incForm.fecha.value = i?.fecha || today();
   incForm.fecha.max = today();
@@ -610,7 +814,7 @@ $('#ingreso-borrar').addEventListener('click', async () => {
 
 // ---------- Datos: backup, ejemplo, borrar ----------
 $('#exportar').addEventListener('click', async () => {
-  const json = JSON.stringify({ app: 'finanzas', version: 3, exportado: new Date().toISOString(), cards, transactions: txs, savings, incomes }, null, 2);
+  const json = JSON.stringify({ app: 'finanzas', version: 4, exportado: new Date().toISOString(), cards, transactions: txs, savings, incomes, subscriptions: subs }, null, 2);
   const file = new File([json], `finanzas-${today()}.json`, { type: 'application/json' });
   const download = () => {
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(file), download: file.name });
@@ -630,7 +834,7 @@ $('#importar').addEventListener('change', async e => {
   let data = null;
   try { data = cleanBackup(JSON.parse(await file.text())); } catch { /* JSON inválido: data queda null */ }
   if (!data) return alert('Ese archivo no es un backup de esta app, así que no se cambió nada. Elegí el .json que guardaste con “Exportar backup”.');
-  if (!confirm(`Esto reemplaza todos tus datos por ${data.cards.length} tarjetas, ${data.transactions.length} gastos, ${data.savings.length} ahorros y ${data.incomes.length} ingresos del backup. ¿Seguimos?`)) return;
+  if (!confirm(`Esto reemplaza todos tus datos por los del backup: ${data.cards.length} tarjetas, ${data.transactions.length} gastos, ${data.savings.length} ahorros, ${data.incomes.length} ingresos y ${data.subscriptions.length} suscripciones. ¿Seguimos?`)) return;
   await save(data, true);
   await reload();
   alert('Backup importado.');
@@ -639,14 +843,14 @@ $('#importar').addEventListener('change', async e => {
 
 $('#ejemplo').addEventListener('click', async () => {
   const data = sampleData();
-  if (!confirm(`Se agregan ${data.cards.length} tarjetas, ${data.transactions.length} gastos, ${data.savings.length} ahorros y ${data.incomes.length} ingresos de ejemplo. Después podés borrarlos con “Borrar todos los datos”.`)) return;
+  if (!confirm(`Se agregan de ejemplo ${data.cards.length} tarjetas, ${data.transactions.length} gastos, ${data.savings.length} ahorros, ${data.incomes.length} ingresos y ${data.subscriptions.length} suscripciones. Después podés borrarlos con “Borrar todos los datos”.`)) return;
   await save(data, false);
   await reload();
   leave('#inicio');
 });
 
 $('#borrar-todo').addEventListener('click', async () => {
-  if (!confirm('¿Borrar TODAS las tarjetas, gastos, ahorros e ingresos? No se puede deshacer (salvo que tengas un backup).')) return;
+  if (!confirm('¿Borrar TODAS las tarjetas, gastos, ahorros, ingresos y suscripciones? No se puede deshacer (salvo que tengas un backup).')) return;
   await save({ cards: [], transactions: [] }, true);
   await reload();
   route();
@@ -664,7 +868,7 @@ addEventListener('hashchange', onHashChange);
 // Al cambiar claro/oscuro se redibujan los gráficos de la sección abierta (sin moverte ni tocar formularios).
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   views.inicio();
-  if (['historial', 'categorias', 'gastos'].includes(current.view)) views[current.view](current.id);
+  if (['historial', 'categorias', 'gastos', 'consumos'].includes(current.view)) views[current.view](current.id);
 });
 // Estos dos son opcionales: si fallan no hay que mostrar el aviso de error.
 navigator.storage?.persist?.().catch(() => {});

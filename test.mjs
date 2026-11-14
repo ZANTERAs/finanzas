@@ -1,7 +1,7 @@
 // Self-check de calc.js: node test.mjs
 import assert from 'node:assert/strict';
 import { cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, parseMonto, cleanBackup, addMonths, sum, savingsByCategory, newId, byDateDesc, cashWithdrawal, checkSaving, fromAccount, formatMontoTexto, monthSplit,
-  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes } from './calc.js';
+  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkTx, subExpense, subPendientes, leerFactura, consumoPorMes } from './calc.js';
 import { sampleData } from './sample.js';
 
 const t = { id: 'a', monto: 1000, moneda: 'ARS', descripcion: 'Heladera', categoria: 'Hogar', fecha: '2026-11-20', cardId: null, cuotas: 3 };
@@ -111,7 +111,8 @@ assert.equal(cleanBackup({ cards: [], transactions: [], incomes: [{ ...ing, desc
 // Backup completo (exportar → importar) con datos realistas: tiene que volver idéntico.
 // Si el export y la validación del import se desalinean (un campo nuevo, una regla nueva), esto falla.
 const backup = JSON.parse(JSON.stringify({ app: 'finanzas', version: 2, exportado: '2026-11-12T12:00:00.000Z', ...sampleData(new Date(2026, 10, 12)) }));
-assert.deepEqual(cleanBackup(backup), { cards: backup.cards, transactions: backup.transactions, savings: backup.savings, incomes: backup.incomes });
+assert.deepEqual(cleanBackup(backup), { cards: backup.cards, transactions: backup.transactions, savings: backup.savings, incomes: backup.incomes, subscriptions: backup.subscriptions });
+assert.ok(backup.subscriptions.length && backup.transactions.some(t => t.consumo > 0));
 assert.ok(backup.transactions.some(t => t.cuotas > 1) && backup.savings.some(s => s.moneda === 'USD' && s.monto > 0) && backup.savings.some(s => s.monto < 0));
 assert.ok(backup.incomes.some(i => i.moneda === 'ARS') && backup.incomes.some(i => i.moneda === 'USD'));
 
@@ -130,5 +131,48 @@ const retiro = cashWithdrawal(enEfectivo, 'Cuenta de ahorros');
 assert.deepEqual(retiro, { id: 'gasto-g1', monto: -1500.5, moneda: 'ARS', categoria: 'Cuenta de ahorros', descripcion: 'Gasto: Verdulería', fecha: '2026-11-20' });
 assert.ok(checkSaving(retiro));
 assert.deepEqual(savingsByCategory([ah('s1', 'Cuenta de ahorros', 500000), retiro]), [{ categoria: 'Cuenta de ahorros', total: 498499.5 }]);
+
+// Luz, gas y agua: consumo y lectura opcionales, nunca negativos; el backup los conserva solo si están
+const luz = { ...t, id: 'l1', categoria: 'Luz', cuotas: 1, consumo: 250, lectura: 10500 };
+assert.ok(checkTx(luz) && checkTx(t));
+assert.ok(!checkTx({ ...luz, consumo: -1 }) && !checkTx({ ...luz, lectura: NaN }) && !checkTx({ ...luz, consumo: null }));
+assert.deepEqual(cleanBackup({ cards: [], transactions: [luz, t] }).transactions, [luz, t]);
+assert.ok(!('consumo' in cleanBackup({ cards: [], transactions: [t] }).transactions[0]));
+
+// Suscripciones: el gasto del mes (id fijo), día 31 en noviembre → 30; pendientes = día ya llegado y sin cargar
+const netflix = { id: 'n1', nombre: 'Netflix', monto: 11999, moneda: 'ARS', dia: 31, cardId: 'demo-galicia' };
+const claude = { id: 'c1', nombre: 'Claude', monto: 20, moneda: 'USD', dia: 5, cardId: null };
+assert.deepEqual(subExpense(netflix, '2026-11'), { id: 'sub-n1-2026-11', monto: 11999, moneda: 'ARS', descripcion: 'Netflix', categoria: 'Suscripciones', fecha: '2026-11-30', cardId: 'demo-galicia', cuotas: 1 });
+assert.ok(checkTx(subExpense(netflix, '2026-02')) && subExpense(netflix, '2026-02').fecha === '2026-02-28');
+assert.deepEqual(subPendientes([netflix, claude], [], '2026-11-13').map(x => x.id), ['sub-c1-2026-11']);
+assert.deepEqual(subPendientes([netflix, claude], [subExpense(claude, '2026-11')], '2026-11-13'), []);
+assert.deepEqual(subPendientes([netflix, claude], [], '2026-11-30').length, 2);
+assert.equal(cleanBackup({ cards: [], transactions: [], subscriptions: [{ ...netflix, dia: 32 }] }), null);
+assert.deepEqual(cleanBackup({ cards: [], transactions: [], subscriptions: [{ ...claude, extra: 1 }] }).subscriptions, [claude]);
+assert.deepEqual(cleanBackup({ cards: [], transactions: [] }).subscriptions, []);
+
+// Leer factura (texto copiado de la foto)
+assert.deepEqual(leerFactura(`EDENOR S.A.
+Factura B 0012-00345678
+Período 15/09/2026 al 15/11/2026
+Lectura anterior 10.250
+Lectura actual 15/11/2026 10.500
+Consumo 250 kWh
+Subtotal $ 25.000,00
+Total a pagar hasta el 1er vto. $ 31.250,45
+Vencimiento 25/11/2026`), { descripcion: 'Edenor', categoria: 'Luz', monto: 31250.45, consumo: 250, lectura: 10500 });
+assert.deepEqual(leerFactura('METROGAS\nConsumo del período: 45 m3\nConsumo total 45 m3\nTOTAL $18.430'), { descripcion: 'Metrogas', categoria: 'Gas', monto: 18430, consumo: 45 });
+assert.deepEqual(leerFactura('Agua potable\nImporte total 9.876,50\nconsumo 12 m³'), { categoria: 'Agua', monto: 9876.5, consumo: 12 });
+assert.deepEqual(leerFactura('hola'), {});
+// Como sale de la foto: m³ leído como "m*", rótulo y monto separados por espacios
+assert.deepEqual(leerFactura('Agua y Saneamientos\nConsumo 12 m*\nCargo fijo $ 4.100,00\nTotal a pagar $ 9.876,50'), { categoria: 'Agua', monto: 9876.5, consumo: 12 });
+assert.deepEqual(leerFactura('Consumo 45m3 gas natural'), { categoria: 'Gas', consumo: 45 });
+assert.equal(leerFactura('Total a pagar $ 100 (atención 24 hs)').categoria, undefined); // "hs" no es una unidad
+
+// Consumos: kWh por mes según la fecha de cada factura; mes sin factura = null (no 0)
+const fact = (id, fecha, consumo, categoria = 'Luz') => ({ ...t, id, fecha, cuotas: 1, categoria, ...(consumo !== undefined && { consumo }) });
+assert.deepEqual(consumoPorMes([fact('1', '2026-09-10', 250), fact('2', '2026-11-12', 260.5), fact('3', '2026-11-20', 10), fact('4', '2026-11-01', 40, 'Gas'), fact('5', '2026-10-05')], 'Luz', ['2026-09', '2026-10', '2026-11']),
+  [250, null, 270.5]);
+assert.equal(leerFactura('TELECENTRO S.A.\nTotal a pagar $ 28.000').categoria, 'Internet');
 
 console.log('calc.js ok');
