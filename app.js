@@ -3,7 +3,7 @@ import {
   today, ym, addMonths, money, parseMonto, cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, sum,
   REDES, MONEDAS, checkCard, checkTx, cleanBackup, savingsByCategory, checkSaving, newId, byDateDesc, cashWithdrawal, fromAccount, formatMontoTexto, monthSplit,
   monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkIncome,
-  UNIDADES, subExpense, subPendientes, checkSub, leerFactura, SERVICIOS, consumoPorMes,
+  UNIDADES, subExpense, subPendientes, checkSub, leerFactura, SERVICIOS, consumoPorMes, incomeInMonth,
 } from './calc.js';
 import { sampleData } from './sample.js';
 
@@ -209,7 +209,7 @@ const views = {
     const serv = txs.filter(t => SERVICIOS.includes(t.categoria));
     menuVal('#mv-consumos', usadas(serv.filter(t => shareInMonth(t, cur))).map(m => money(monthTotal(serv, cur, m), m)), 'este mes');
     menuVal('#mv-ahorros', usadas(savings).map(m => money(sum(savings.filter(s => s.moneda === m).map(s => s.monto)), m)), 'ahorrado');
-    const ingMes = incomes.filter(i => ym(i.fecha) === cur);
+    const ingMes = incomes.filter(i => incomeInMonth(i, cur));
     menuVal('#mv-ingresos', usadas(ingMes).map(m => money(sum(ingMes.filter(i => i.moneda === m).map(i => i.monto)), m)), 'este mes');
     const prev = addMonths(cur, -1), antes = monthTotal(txs, prev);
     menuVal('#mv-historial', antes ? [delta(monthTotal(txs, cur), antes)] : [], `vs ${monthName(prev).split(' ')[0]}`);
@@ -394,13 +394,13 @@ const views = {
 
   // Ingresos (sueldo, freelance…): arriba lo cobrado este mes; abajo todos, del más nuevo al más viejo
   ingresos(id) {
-    const cur = ym(today()), delMes = incomes.filter(i => ym(i.fecha) === cur);
+    const cur = ym(today()), delMes = incomes.filter(i => incomeInMonth(i, cur)); // los fijos y por meses cuentan cada mes
     $('#ingresos-mes').textContent = `cobrado en ${monthName(cur).split(' ')[0]}`;
     porMoneda('#ingresos-total', m => sum(delMes.filter(i => i.moneda === m).map(i => i.monto)), usadas(delMes));
     $('#ingreso-sugeridos').innerHTML = [...new Set([...incomes.map(i => i.descripcion), ...INGRESO_SUGERIDOS])].map(c => `<option value="${esc(c)}">`).join('');
     $('#ingresos-lista').innerHTML = [...incomes].sort(byDateDesc).map(i => `<li><a class="item" href="#ingresos/${esc(i.id)}">
-      <span class="grow"><b>${esc(i.descripcion)}</b><small>${fmtDate(i.fecha)} ${i.fecha.slice(0, 4)}</small></span>
-      <span class="amt in">+ ${money(i.monto, i.moneda)}</span></a></li>`).join('') || empty('Todavía no cargaste ingresos.');
+      <span class="grow"><b>${esc(i.descripcion)}</b><small>${repiteTxt(i, cur)}</small></span>
+      <span class="amt in">+ ${money(i.monto, i.moneda)}${i.meses !== undefined ? '<small>por mes</small>' : ''}</span></a></li>`).join('') || empty('Todavía no cargaste ingresos.');
     const i = incomes.find(x => x.id === id);
     id === 'nuevo' ? openIncomeForm() : i ? openIncomeForm(i) : closeIncomeForm();
   },
@@ -787,21 +787,46 @@ function openIncomeForm(i) {
   incForm.descripcion.value = i?.descripcion || '';
   incForm.fecha.value = i?.fecha || today();
   incForm.fecha.max = today();
+  incForm.repite.value = i?.meses === 0 ? 'fijo' : i?.meses > 1 ? 'meses' : 'una';
+  incForm.meses.value = i?.meses > 1 ? i.meses : 3;
+  repiteHint();
   $('#ingreso-borrar').hidden = !i;
   $('#ingreso-nuevo').hidden = true;
   incForm.hidden = false;
   incForm.scrollIntoView({ behavior: motion(), block: 'start' });
 }
 function closeIncomeForm() { incForm.hidden = true; $('#ingreso-nuevo').hidden = false; editIncome = null; dirty = false; }
+// Ingresos que se repiten: en el formulario, cuántos meses y qué va a entrar; en la lista, en qué cobro va
+function repiteHint() {
+  const rep = incForm.repite.value, n = parseInt(incForm.meses.value, 10), monto = parseMonto(incForm.monto.value);
+  const ini = ym(incForm.fecha.value || today()), m = monto > 0 ? money(monto, incForm.moneda.value) : 'el monto';
+  $('#ingreso-meses').hidden = rep !== 'meses';
+  $('#ingreso-hint').textContent = rep === 'fijo' ? `Se suma ${m} todos los meses desde ${monthName(ini)}, hasta que lo cambies o lo borres.`
+    : rep === 'meses' && n >= 2 ? `${n} cobros de ${m}, de ${monthName(ini)} a ${monthName(addMonths(ini, n - 1))}${monto > 0 ? `: ${money(sum(Array(n).fill(monto)), incForm.moneda.value)} en total` : ''}.`
+    : '';
+}
+function repiteTxt(i, cur) {
+  const fecha = `${fmtDate(i.fecha)} ${i.fecha.slice(0, 4)}`, ini = ym(i.fecha), k = monthRange(ini, cur).length - 1; // k: meses desde el primero (-1 = todavía no empezó)
+  if (i.meses === undefined) return fecha;
+  if (i.meses === 0) return `Fijo, todos los meses desde ${monthName(ini)}`;
+  if (k < 0) return `${i.meses} meses, empieza en ${monthName(ini)}`;
+  if (k >= i.meses) return `${i.meses} meses, terminó en ${monthName(addMonths(ini, i.meses - 1))}`;
+  const faltan = i.meses - k - 1;
+  return `Cobro ${k + 1} de ${i.meses} · ${faltan ? `faltan ${money(sum(Array(faltan).fill(i.monto)), i.moneda)}` : 'el último'}`;
+}
 const backToIngresos = async () => { await reload(); history.replaceState(null, '', '#ingresos'); route(); };
 
 montoVivo(incForm.monto);
+incForm.addEventListener('input', repiteHint);
 $('#ingreso-cancelar').addEventListener('click', () => leave('#ingresos'));
 incForm.addEventListener('submit', busy(async () => {
   const monto = parseMonto(incForm.monto.value), descripcion = incForm.descripcion.value.trim();
   if (!(monto > 0)) return fieldError(incForm.monto, 'Ingresá un monto válido, por ejemplo 850.000.');
   if (!descripcion) return fieldError(incForm.descripcion, 'Escribí de qué es, por ejemplo “Sueldo”.');
-  const i = { id: editIncome?.id || newId(), monto, moneda: incForm.moneda.value, descripcion, fecha: incForm.fecha.value };
+  const rep = incForm.repite.value, n = parseInt(incForm.meses.value, 10);
+  if (rep === 'meses' && !(n >= 2 && n <= 120)) return fieldError(incForm.meses, 'Poné de 2 a 120 meses.');
+  const i = { id: editIncome?.id || newId(), monto, moneda: incForm.moneda.value, descripcion, fecha: incForm.fecha.value,
+    ...(rep === 'fijo' && { meses: 0 }), ...(rep === 'meses' && { meses: n }) };
   if (!checkIncome(i)) return alert('Revisá los datos: elegí una fecha.');
   await put('incomes', i);
   await backToIngresos();

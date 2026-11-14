@@ -171,9 +171,13 @@ export const checkTx = t => str(t.id) && Number.isFinite(t.monto) && t.monto > 0
 const optNum = v => v === undefined || (Number.isFinite(v) && v >= 0); // consumo y lectura: opcionales
 export const checkSaving = s => str(s.id) && Number.isFinite(s.monto) && s.monto !== 0 && MONEDAS.includes(s.moneda) &&
   str(s.categoria) && typeof s.descripcion === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.fecha);
-// Ingreso (sueldo, freelance…): siempre positivo, con concepto y fecha
+// Ingreso (sueldo, freelance…): siempre positivo, con concepto y fecha; "meses" opcional (ver incomeInMonth)
 export const checkIncome = i => str(i.id) && Number.isFinite(i.monto) && i.monto > 0 && MONEDAS.includes(i.moneda) &&
-  str(i.descripcion) && /^\d{4}-\d{2}-\d{2}$/.test(i.fecha);
+  str(i.descripcion) && /^\d{4}-\d{2}-\d{2}$/.test(i.fecha) &&
+  (i.meses === undefined || (Number.isInteger(i.meses) && i.meses >= 0 && i.meses <= 120));
+// Lo que un ingreso suma en el mes m. Se repite el mismo monto cada mes (no se divide, como las cuotas):
+// sin "meses" = una sola vez; meses 0 = fijo, todos los meses desde el de la fecha; meses N = N meses seguidos.
+export const incomeInMonth = (i, m) => { const k = monthDiff(ym(i.fecha), m); return k >= 0 && (i.meses === 0 || k < (i.meses ?? 1)) ? i.monto : 0; };
 export const checkSub = s => str(s.id) && str(s.nombre) && Number.isFinite(s.monto) && s.monto > 0 && MONEDAS.includes(s.moneda) &&
   Number.isInteger(s.dia) && s.dia >= 1 && s.dia <= 31 && (s.cardId === null || str(s.cardId));
 
@@ -186,7 +190,7 @@ export function cleanBackup(d) {
     const transactions = d.transactions.map(({ id, monto, moneda, descripcion, categoria, fecha, cardId = null, cuotas, consumo, lectura }) =>
       ({ id, monto, moneda, descripcion, categoria, fecha, cardId, cuotas, ...(consumo !== undefined && { consumo }), ...(lectura !== undefined && { lectura }) }));
     const savings = (d.savings ?? []).map(({ id, monto, moneda, categoria, descripcion = '', fecha }) => ({ id, monto, moneda, categoria, descripcion, fecha }));
-    const incomes = (d.incomes ?? []).map(({ id, monto, moneda, descripcion, fecha }) => ({ id, monto, moneda, descripcion, fecha }));
+    const incomes = (d.incomes ?? []).map(({ id, monto, moneda, descripcion, fecha, meses }) => ({ id, monto, moneda, descripcion, fecha, ...(meses !== undefined && { meses }) }));
     const subscriptions = (d.subscriptions ?? []).map(({ id, nombre, monto, moneda, dia, cardId = null }) => ({ id, nombre, monto, moneda, dia, cardId }));
     return cards.every(checkCard) && transactions.every(checkTx) && savings.every(checkSaving) && incomes.every(checkIncome) && subscriptions.every(checkSub)
       ? { cards, transactions, savings, incomes, subscriptions } : null;

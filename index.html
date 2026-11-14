@@ -227,7 +227,10 @@
       <label>Monto <input name="monto" inputmode="decimal" placeholder="$ 0" required></label>
       <label>Concepto <input name="descripcion" list="ingreso-sugeridos" maxlength="40" placeholder="Ej.: Sueldo…" required></label>
       <datalist id="ingreso-sugeridos"></datalist>
+      <label>Se repite <select name="repite"><option value="una">Una vez</option><option value="fijo">Todos los meses (fijo)</option><option value="meses">Por unos meses</option></select></label>
+      <label id="ingreso-meses" hidden>¿Cuántos meses? <input type="number" name="meses" min="2" max="120" value="3" inputmode="numeric"></label>
       <label>Fecha <input type="date" name="fecha" min="2000-01-01" required></label>
+      <p class="muted hint" id="ingreso-hint" aria-live="polite"></p>
       <div class="row">
         <button class="btn" type="button" id="ingreso-cancelar">Cancelar</button>
         <button class="btn primary" type="submit">Guardar ingreso</button>

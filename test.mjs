@@ -1,7 +1,7 @@
 // Self-check de calc.js: node test.mjs
 import assert from 'node:assert/strict';
 import { cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, parseMonto, cleanBackup, addMonths, sum, savingsByCategory, newId, byDateDesc, cashWithdrawal, checkSaving, fromAccount, formatMontoTexto, monthSplit,
-  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkTx, subExpense, subPendientes, leerFactura, consumoPorMes } from './calc.js';
+  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkTx, subExpense, subPendientes, leerFactura, consumoPorMes, incomeInMonth, checkIncome } from './calc.js';
 import { sampleData } from './sample.js';
 
 const t = { id: 'a', monto: 1000, moneda: 'ARS', descripcion: 'Heladera', categoria: 'Hogar', fecha: '2026-11-20', cardId: null, cuotas: 3 };
@@ -174,5 +174,13 @@ const fact = (id, fecha, consumo, categoria = 'Luz') => ({ ...t, id, fecha, cuot
 assert.deepEqual(consumoPorMes([fact('1', '2026-09-10', 250), fact('2', '2026-11-12', 260.5), fact('3', '2026-11-20', 10), fact('4', '2026-11-01', 40, 'Gas'), fact('5', '2026-10-05')], 'Luz', ['2026-09', '2026-10', '2026-11']),
   [250, null, 270.5]);
 assert.equal(leerFactura('TELECENTRO S.A.\nTotal a pagar $ 28.000').categoria, 'Internet');
+
+// Ingresos que se repiten: una vez, fijo (todos los meses) o N meses; cada mes suma el monto entero
+const prestamo = { id: 'p1', monto: 50000, moneda: 'ARS', descripcion: 'Devolución préstamo', fecha: '2026-11-20', meses: 3 };
+assert.deepEqual(['2026-10', '2026-11', '2026-12', '2027-01', '2027-02'].map(m => incomeInMonth(prestamo, m)), [0, 50000, 50000, 50000, 0]);
+assert.deepEqual(['2026-10', '2026-11', '2030-05'].map(m => incomeInMonth({ ...prestamo, meses: 0 }, m)), [0, 50000, 50000]);
+assert.deepEqual(['2026-10', '2026-11', '2026-12'].map(m => incomeInMonth(ing, m)), [0, 1450000, 0]); // una sola vez
+assert.ok(checkIncome(prestamo) && checkIncome({ ...prestamo, meses: 0 }) && !checkIncome({ ...prestamo, meses: 2.5 }) && !checkIncome({ ...prestamo, meses: -1 }));
+assert.deepEqual(cleanBackup({ cards: [], transactions: [], incomes: [prestamo, ing] }).incomes, [prestamo, ing]);
 
 console.log('calc.js ok');

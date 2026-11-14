@@ -46,6 +46,8 @@ export function sampleData(now = new Date()) {
     id: `demo-i${back}`, monto: Math.round(1200000 * 1.03 ** (6 - back) / 1000) * 1000, moneda: 'ARS', descripcion: 'Sueldo', fecha: fecha(back, 1),
   }));
   incomes.push({ id: 'demo-i-free', monto: 400, moneda: 'USD', descripcion: 'Trabajo freelance', fecha: fecha(2, 18) });
+  // Un amigo devuelve un préstamo en 3 transferencias iguales, una por mes
+  incomes.push({ id: 'demo-i-prestamo', monto: 50000, moneda: 'ARS', descripcion: 'Devolución de préstamo', fecha: fecha(1, 10), meses: 3 });
   const subscriptions = [
     { id: 'demo-s-netflix', nombre: 'Netflix', monto: 11999, moneda: 'ARS', dia: 5, cardId: 'demo-galicia' },
     { id: 'demo-s-disney', nombre: 'Disney+', monto: 9499, moneda: 'ARS', dia: 12, cardId: 'demo-santander' },
