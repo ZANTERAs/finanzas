@@ -54,5 +54,7 @@ export function sampleData(now = new Date()) {
     { id: 'demo-s-spotify', nombre: 'Spotify', monto: 4499, moneda: 'ARS', dia: 20, cardId: 'demo-galicia' },
     { id: 'demo-s-claude', nombre: 'Claude', monto: 20, moneda: 'USD', dia: 25, cardId: 'demo-bbva' },
   ];
-  return { cards: CARDS, transactions, savings, incomes, subscriptions };
+  // Galicia vence el 5 y Santander el 8; BBVA vence en 3 días, así el inicio muestra un recordatorio
+  const cards = CARDS.map(c => ({ ...c, vence: { 'demo-galicia': 5, 'demo-santander': 8 }[c.id] ?? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 3).getDate() }));
+  return { cards, transactions, savings, incomes, subscriptions };
 }

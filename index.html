@@ -25,6 +25,7 @@
   <!-- Página principal: el resumen del mes y la lista de menús. Cada menú se abre como una hoja encima. -->
   <div id="pagina">
     <h1>Finanzas</h1>
+    <div class="avisos" id="avisos"></div>
     <div class="resumen">
       <a class="box hero cat-link" href="#gastos">
         <p class="eyebrow" id="inicio-mes"></p>
@@ -290,6 +291,8 @@
       <div id="cierre-campo">
         <label>Día de cierre del resumen (opcional) <input type="number" name="cierre" min="1" max="31" inputmode="numeric" placeholder="Ej.: 22…"></label>
         <p class="muted hint">Lo que compres después de ese día se anota en el pago del mes siguiente, y sus cuotas arrancan ahí.</p>
+        <label>Día de vencimiento (opcional) <input type="number" name="vence" min="1" max="31" inputmode="numeric" placeholder="Ej.: 5…"></label>
+        <p class="muted hint">Una semana antes, el inicio te avisa cuánto tenés que pagar.</p>
       </div>
       <label>Últimos 4 dígitos <input name="ultimos4" inputmode="numeric" spellcheck="false" pattern="[0-9]{4}" maxlength="4" placeholder="1234" required></label>
       <p class="muted hint">Solo los últimos 4. Nunca cargues el número completo.</p>

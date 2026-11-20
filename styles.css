@@ -118,7 +118,7 @@ h2 { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: u
   border: 1px solid var(--glass-border);
   box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
 }
-.box { border-radius: 5px; padding: 18px; margin-bottom: 16px; }
+.box { border-radius: 22px; padding: 18px; margin-bottom: 16px; }
 
 .hero { padding: 4px 4px 24px; }
 .hero p { margin: 0; }
@@ -147,19 +147,19 @@ h2 { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: u
 .item b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item small { display: block; font-size: 13px; color: var(--ink-2); }
 .amt { text-align: right; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.dot { flex: none; width: 4px; height: 30px; border-radius: 1px; background: var(--muted); }
+.dot { flex: none; width: 4px; height: 30px; border-radius: 2px; background: var(--muted); }
 .empty { color: var(--ink-2); text-align: center; padding: 20px 0; }
 progress {
-  display: block; width: 100%; height: 4px; margin: 8px 0 4px; border: 0; border-radius: 1px;
+  display: block; width: 100%; height: 4px; margin: 8px 0 4px; border: 0; border-radius: 2px;
   appearance: none; -webkit-appearance: none; background: var(--grid); overflow: hidden;
 }
 progress::-webkit-progress-bar { background: var(--grid); }
-progress::-webkit-progress-value { background: var(--accent-grad); border-radius: 1px; }
+progress::-webkit-progress-value { background: var(--accent-grad); border-radius: 2px; }
 progress::-moz-progress-bar { background: var(--accent-grad); }
 
 /* Resúmenes */
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-.stat { border-radius: 5px; padding: 14px 16px; }
+.stat { border-radius: 20px; padding: 14px 16px; }
 .stat > span { display: block; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
 .stat strong { display: block; font-size: 22px; font-weight: 500; margin-top: 4px; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
 .stat strong.long { font-size: 18px; } /* montos de 8+ dígitos: entran en media pantalla */
@@ -180,7 +180,7 @@ label { display: block; font-size: 13px; font-weight: 500; color: var(--ink-2); 
 input, select, textarea {
   display: block; width: 100%; height: 50px; margin-top: 6px; padding: 0 14px;
   font: inherit; font-size: 17px; color: var(--ink); background-color: var(--field);
-  border: 1px solid var(--glass-border); border-radius: 3.5px; appearance: none; -webkit-appearance: none;
+  border: 1px solid var(--glass-border); border-radius: 14px; appearance: none; -webkit-appearance: none;
 }
 ::placeholder { color: var(--muted); opacity: 1; }
 option { background: var(--solid); color: var(--ink); }
@@ -219,7 +219,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .btn {
   display: flex; align-items: center; justify-content: center; width: 100%; min-height: 52px; margin-bottom: 12px;
   font: inherit; font-size: 17px; font-weight: 600; color: var(--ink); background: var(--glass);
-  border: 1px solid var(--glass-border); border-radius: 4px; box-shadow: inset 0 1px 0 var(--highlight);
+  border: 1px solid var(--glass-border); border-radius: 16px; box-shadow: inset 0 1px 0 var(--highlight);
   cursor: pointer; position: relative; text-decoration: none;
 }
 .btn.primary {
@@ -261,7 +261,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   flex: 0 0 var(--card-w); aspect-ratio: 1.586; scroll-snap-align: center; scroll-snap-stop: always;
   display: flex; flex-direction: column; justify-content: space-between; position: relative; margin: 0; padding: 20px 22px;
   background: linear-gradient(135deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, 0) 42%), var(--card);
-  color: var(--card-ink); border: 1px solid rgba(255, 255, 255, .14); border-radius: 5.5px;
+  color: var(--card-ink); border: 1px solid rgba(255, 255, 255, .14); border-radius: 22px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 26px 40px -22px rgba(0, 0, 0, .75);
   font: inherit; font-size: 18px; text-align: left; cursor: pointer; text-decoration: none;
 }
@@ -272,6 +272,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .num { font-size: 1.15em; letter-spacing: .16em; font-variant-numeric: tabular-nums; }
 .num::before { content: "•••• •••• "; } /* solo dibujo: se guardan únicamente los últimos 4 */
 .net { align-self: flex-end; font-size: 1.35em; font-weight: 700; font-style: italic; }
+.pie { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 8px; }
+.pie .net { margin-left: auto; white-space: nowrap; } /* si no entra al lado de los días (American Express), baja y queda a la derecha */
+.dias { font-size: .62em; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; opacity: .85; white-space: nowrap; }
 .bank-card.cash { background: var(--glass); color: var(--ink); border: 1.5px dashed var(--muted); box-shadow: none; justify-content: center; text-align: center; }
 /* Medio de pago: tarjetas algo más angostas (asoman más las vecinas); la del centro es la elegida y las otras se atenúan */
 #card-picker { --card-w: min(80%, 360px); }
@@ -287,11 +290,17 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .tiles { display: flex; justify-content: center; gap: 28px; margin-bottom: 20px; }
 .tile { width: 76px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink); cursor: pointer; text-decoration: none; }
 .tile svg {
-  box-sizing: content-box; width: 26px; height: 26px; padding: 21px; border-radius: 5.5px; color: var(--accent);
+  box-sizing: content-box; width: 26px; height: 26px; padding: 21px; border-radius: 22px; color: var(--accent);
   background: var(--glass); border: 1px solid var(--glass-border); box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
   fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
 }
 
+/* Recordatorios de vencimiento, arriba del resumen: una franja de vidrio con borde de acento a la izquierda */
+.avisos { display: grid; gap: 10px; margin-bottom: 12px; }
+.avisos:empty { display: none; }
+.aviso { margin: 0; padding: 12px 14px; border-left: 3px solid var(--accent); }
+.aviso b { display: block; font-weight: 600; }
+.aviso small { display: block; margin-top: 2px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 /* Página principal: el total del mes y, a su derecha, el gasto por categoría */
 .resumen { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-bottom: 16px; }
 .resumen:has(#inicio-cat-box[hidden]) { grid-template-columns: 1fr; }
@@ -323,7 +332,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 0 18px;
   color: inherit; text-decoration: none; font-size: 18px; font-weight: 600; letter-spacing: -.01em;
   background: var(--glass); -webkit-backdrop-filter: blur(24px) saturate(160%); backdrop-filter: blur(24px) saturate(160%);
-  border: 1px solid var(--glass-border); border-radius: 5px; box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
+  border: 1px solid var(--glass-border); border-radius: 22px; box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
 }
 .menu-row::after { content: ""; flex: none; margin-left: 12px; width: 8px; height: 8px; border-top: 2px solid var(--ink-2); border-right: 2px solid var(--ink-2); transform: rotate(45deg); }
 .menu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -343,7 +352,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   padding: 4px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 110px) calc(env(safe-area-inset-left) + 16px);
   scroll-padding: 56px 0 96px; /* lo enfocado no queda bajo "Atrás" ni los botones redondos */
   background: var(--sheet); -webkit-backdrop-filter: blur(30px) saturate(160%); backdrop-filter: blur(30px) saturate(160%);
-  border: 1px solid var(--glass-border); border-bottom: 0; border-radius: 6px 6px 0 0;
+  border: 1px solid var(--glass-border); border-bottom: 0; border-radius: 24px 24px 0 0;
   box-shadow: 0 -12px 40px rgba(0, 0, 0, .35);
   animation: sheet-up .42s var(--ease);
 }
@@ -379,17 +388,17 @@ body[data-view=nuevo] .fab { display: none; }
 /* Control segmentado (Guardé/Saqué, Pesos/Dólares): la "perilla" se desliza hasta la opción elegida */
 .seg {
   position: relative; isolation: isolate; display: flex; padding: 4px; margin-bottom: 14px;
-  background: var(--field); border: 1px solid var(--glass-border); border-radius: 3.5px;
+  background: var(--field); border: 1px solid var(--glass-border); border-radius: 14px;
 }
 .seg::before {
   content: ""; position: absolute; z-index: -1; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px);
-  border-radius: 2px; background: var(--accent-grad); box-shadow: 0 6px 18px -6px var(--glow);
+  border-radius: 10px; background: var(--accent-grad); box-shadow: 0 6px 18px -6px var(--glow);
   transition: transform .35s var(--ease);
 }
 .seg:has(label:last-of-type :checked)::before { transform: translateX(100%); }
 .seg label { flex: 1; margin: 0; position: relative; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
-.seg span { display: flex; align-items: center; justify-content: center; height: 40px; border-radius: 2px; font-size: 15px; font-weight: 600; color: var(--ink-2); }
+.seg span { display: flex; align-items: center; justify-content: center; height: 40px; border-radius: 10px; font-size: 15px; font-weight: 600; color: var(--ink-2); }
 .seg input:checked + span { color: var(--on-accent); }
 .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 

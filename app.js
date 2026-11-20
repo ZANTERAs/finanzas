@@ -4,7 +4,7 @@ import {
   REDES, MONEDAS, checkCard, checkTx, cleanBackup, savingsByCategory, checkSaving, newId, byDateDesc, formatMontoTexto, monthSplit,
   monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkIncome,
   UNIDADES, subExpense, subPendientes, checkSub, leerFactura, SERVICIOS, consumoPorMes, incomeInMonth,
-  debitaCuenta, retirosSobrantes, mesResumen, mesesDeFilas, retirosAlGuardar,
+  debitaCuenta, retirosSobrantes, mesResumen, mesesDeFilas, retirosAlGuardar, proximosVencimientos,
 } from './calc.js';
 import { sampleData } from './sample.js';
 
@@ -100,8 +100,10 @@ const fmtDate = (f, conAnio = false) => new Date(f.slice(0, 4), f.slice(5, 7) - 
 // Texto negro o blanco según qué tan claro sea el color de la tarjeta.
 const ink = hex => { const n = parseInt(hex.slice(1), 16); return ((n >> 16) * 299 + (n >> 8 & 255) * 587 + (n & 255) * 114) / 1000 > 150 ? '#0b0b0b' : '#ffffff'; };
 const cardStyle = c => `--card:${c.color};--card-ink:${ink(c.color)}`;
-const cardFace = c => `<span class="top"><span class="bank">${esc(c.banco)}</span><span class="tipo">${c.tipo === 'debito' ? 'Débito' : `Crédito${c.cierre ? ` · cierre ${c.cierre}` : ''}`}</span></span>`
-  + `<span class="num">•••• ${esc(c.ultimos4)}</span><span class="net">${esc(c.red)}</span>`;
+// Abajo, junto a la red: los días de cierre y vencimiento (arriba no entran sin cortar el nombre del banco)
+const cardFace = c => `<span class="top"><span class="bank">${esc(c.banco)}</span><span class="tipo">${c.tipo === 'debito' ? 'Débito' : 'Crédito'}</span></span>`
+  + `<span class="num">•••• ${esc(c.ultimos4)}</span>`
+  + `<span class="pie"><span class="dias">${[c.cierre && `cierre ${c.cierre}`, c.vence && `vence ${c.vence}`].filter(Boolean).join(' · ')}</span><span class="net">${esc(c.red)}</span></span>`;
 const cardOf = t => cards.find(c => c.id === t.cardId);
 const cardLabel = t => { const c = cardOf(t); return c ? `${c.banco} ${c.ultimos4}` : t.cardId ? 'Tarjeta borrada' : 'Efectivo / transferencia'; };
 
@@ -157,7 +159,7 @@ function barChart(id, labels, data, { horizontal = false, highlight = -1, onPick
   charts[id] = new Chart(canvas, {
     type: 'bar',
     data: { labels, datasets: [{
-      data, borderRadius: 1.5, borderSkipped: 'start', maxBarThickness: compact ? 12 : horizontal ? 18 : 24,
+      data, borderRadius: 6, borderSkipped: 'start', maxBarThickness: compact ? 12 : horizontal ? 18 : 24,
       backgroundColor: data.map((_, i) => highlight < 0 || i === highlight ? v('--series') : v('--series-soft')),
     }] },
     options: {
@@ -165,7 +167,7 @@ function barChart(id, labels, data, { horizontal = false, highlight = -1, onPick
       interaction: { mode: 'index', intersect: false, axis: horizontal ? 'y' : 'x' },
       plugins: { legend: { display: false }, tooltip: {
         displayColors: false, backgroundColor: v('--solid'), titleColor: v('--ink-2'), bodyColor: v('--ink'),
-        borderColor: v('--glass-border'), borderWidth: 1, cornerRadius: 3, padding: 10, callbacks: { label: c => fmt(c.raw) },
+        borderColor: v('--glass-border'), borderWidth: 1, cornerRadius: 12, padding: 10, callbacks: { label: c => fmt(c.raw) },
       } },
       scales: horizontal ? { x: valueAxis, y: catAxis } : { x: catAxis, y: valueAxis },
       onClick: onPick && ((e, els) => els[0] && onPick(els[0].index)),
@@ -197,6 +199,14 @@ const views = {
   // La página principal (siempre de fondo): el total del mes y, al lado, el gasto por categoría
   inicio() {
     const cur = ym(today());
+    // Recordatorios: tarjetas que vencen en los próximos 7 días, con lo que hay que pagar de ese resumen
+    const hoy = today(), manana = new Date();
+    manana.setDate(manana.getDate() + 1);
+    const cuando = f => f === hoy ? 'hoy' : f === today(manana) ? 'mañana'
+      : `el ${new Date(f.slice(0, 4), f.slice(5, 7) - 1, f.slice(8)).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric' })}`;
+    $('#avisos').innerHTML = proximosVencimientos(cards, txs, hoy).map(({ card, resumen, fecha, montos }) => `<div class="box aviso">
+      <b>${esc(card.banco)} ${esc(card.ultimos4)} vence ${cuando(fecha)}</b>
+      <small>Resumen de ${monthName(resumen).split(' ')[0]}: ${montos.map(([m, v]) => money(v, m)).join(' · ')}</small></div>`).join('');
     $('#inicio-mes').textContent = monthName(cur);
     const enMes = txs.filter(t => shareInMonth(t, cur)), monedas = usadas(enMes);
     porMoneda('#inicio-total', m => monthTotal(txs, cur, m), monedas);
@@ -694,6 +704,7 @@ function openCardForm(c) {
   cardForm.ultimos4.value = c?.ultimos4 || '';
   cardForm.color.value = c?.color || '#555555';
   cardForm.cierre.value = c?.cierre ?? '';
+  cardForm.vence.value = c?.vence ?? '';
   cierreField();
   $('#card-borrar').hidden = !c;
   $('#card-acciones').hidden = true;
@@ -709,11 +720,12 @@ cardForm.banco.addEventListener('input', () => {
   const hit = Object.entries(BANCOS).find(([b]) => b.toLowerCase() === cardForm.banco.value.trim().toLowerCase());
   if (hit) cardForm.color.value = hit[1];
 });
-// Día de cierre: solo para crédito (el débito no tiene resumen)
+// Días de cierre y vencimiento: solo para crédito (el débito no tiene resumen)
 const cierreField = () => { $('#cierre-campo').hidden = cardForm.tipo.value !== 'credito'; };
 cardForm.querySelectorAll('[name=tipo]').forEach(r => r.addEventListener('change', cierreField));
 cardForm.addEventListener('submit', busy(async () => {
-  const cierre = cardForm.cierre.value.trim() === '' ? undefined : Number(cardForm.cierre.value);
+  const dia = k => cardForm[k].value.trim() === '' ? undefined : Number(cardForm[k].value); // vacío = no cargado
+  const cierre = dia('cierre'), vence = dia('vence'), credito = cardForm.tipo.value === 'credito';
   const c = {
     id: editCard?.id || newId(),
     banco: cardForm.banco.value.trim(),
@@ -721,10 +733,13 @@ cardForm.addEventListener('submit', busy(async () => {
     tipo: cardForm.tipo.value,
     ultimos4: cardForm.ultimos4.value.trim(),
     color: cardForm.color.value,
-    ...(cardForm.tipo.value === 'credito' && cierre !== undefined && { cierre }),
+    ...(credito && cierre !== undefined && { cierre }),
+    ...(credito && vence !== undefined && { vence }),
   };
   if (!c.banco) return fieldError(cardForm.banco, 'Escribí el banco, por ejemplo “Galicia”.');
-  if (c.cierre !== undefined && !(Number.isInteger(c.cierre) && c.cierre >= 1 && c.cierre <= 31)) return fieldError(cardForm.cierre, 'Poné un día del 1 al 31, o dejalo vacío.');
+  for (const k of ['cierre', 'vence']) {
+    if (c[k] !== undefined && !(Number.isInteger(c[k]) && c[k] >= 1 && c[k] <= 31)) return fieldError(cardForm[k], 'Poné un día del 1 al 31, o dejalo vacío.');
+  }
   if (!checkCard(c)) return alert('Revisá los datos: van exactamente los últimos 4 dígitos de la tarjeta.');
   await put('cards', c);
   await reload();

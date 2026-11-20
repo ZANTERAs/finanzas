@@ -1,7 +1,7 @@
 // Self-check de calc.js: node test.mjs
 import assert from 'node:assert/strict';
 import { cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, parseMonto, cleanBackup, addMonths, sum, savingsByCategory, newId, byDateDesc, cashWithdrawal, checkSaving, fromAccount, formatMontoTexto, monthSplit,
-  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkTx, subExpense, subPendientes, leerFactura, consumoPorMes, incomeInMonth, checkIncome, debitaCuenta, retirosSobrantes, mesResumen, mesesDeFilas, retirosAlGuardar } from './calc.js';
+  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkTx, subExpense, subPendientes, leerFactura, consumoPorMes, incomeInMonth, checkIncome, debitaCuenta, retirosSobrantes, mesResumen, mesesDeFilas, retirosAlGuardar, venceResumen, proximosVencimientos } from './calc.js';
 import { sampleData } from './sample.js';
 
 const t = { id: 'a', monto: 1000, moneda: 'ARS', descripcion: 'Heladera', categoria: 'Hogar', fecha: '2026-11-20', cardId: null, cuotas: 3 };
@@ -224,5 +224,25 @@ const alGuardar = retirosAlGuardar([gasto('a', 'deb'), gasto('b', null), gasto('
   tarjetas, [{ ...ret('v'), categoria: 'Ahorros' }], 'Cuenta de ahorros');
 assert.deepEqual(alGuardar.put.map(s => [s.id, s.categoria, s.monto]), [['gasto-a', 'Cuenta de ahorros', -1000], ['gasto-v', 'Ahorros', -1000]]);
 assert.deepEqual(alGuardar.del, ['gasto-b', 'gasto-c', 'gasto-d']);
+
+// Vencimiento: después del cierre → mes siguiente; antes del cierre → mismo mes; sin cierre → mes siguiente; 31 en febrero → 28
+assert.deepEqual([[{ cierre: 22, vence: 5 }, '2026-11'], [{ cierre: 5, vence: 15 }, '2026-11'], [{ vence: 10 }, '2026-11'], [{ cierre: 22, vence: 31 }, '2026-02']]
+  .map(([c, m]) => venceResumen(c, m)), ['2026-12-05', '2026-11-15', '2026-12-10', '2026-02-28']);
+// Recordatorios: el resumen de noviembre de Galicia (cierra el 22, vence el 5) se avisa del 28/11 al 5/12, con su total
+const gal = { id: 'gal', tipo: 'credito', cierre: 22, vence: 5 }, debVence = { id: 'deb', tipo: 'debito', vence: 5 };
+const compra = Object.defineProperty({ ...t, id: 'v1', cardId: 'gal', fecha: '2026-11-10', cuotas: 2 }, 'mes', { value: '2026-11' }); // 500 + 500
+const tarde22 = Object.defineProperty({ ...t, id: 'v2', cardId: 'gal', fecha: '2026-11-25', cuotas: 1 }, 'mes', { value: '2026-12' }); // va al de diciembre
+const enDolares = Object.defineProperty({ ...t, id: 'v3', cardId: 'gal', fecha: '2026-11-12', cuotas: 1, monto: 20, moneda: 'USD' }, 'mes', { value: '2026-11' });
+const avisar = hoy => proximosVencimientos([gal, debVence], [compra, tarde22, enDolares], hoy);
+assert.deepEqual(avisar('2026-12-01').map(a => [a.card.id, a.resumen, a.fecha, a.montos]), [['gal', '2026-11', '2026-12-05', [['ARS', 500], ['USD', 20]]]]);
+assert.equal(avisar('2026-12-05').length, 1); // vence hoy
+assert.equal(avisar('2026-11-27').length, 0); // faltan 8 días
+assert.equal(avisar('2026-11-28').length, 1); // faltan 7
+assert.deepEqual(avisar('2026-12-06').map(a => [a.resumen, a.fecha, a.montos]), []); // el de diciembre vence el 5/1: falta mucho
+assert.deepEqual(avisar('2026-12-30').map(a => [a.resumen, a.fecha, a.montos]), [['2026-12', '2027-01-05', [['ARS', 1500]]]]); // cuota 2 + la compra del 25/11
+assert.equal(proximosVencimientos([gal], [], '2026-12-01').length, 0); // sin gastos en ese resumen: sin aviso
+// Vencimiento en el backup: se conserva; fuera de 1–31 se rechaza
+assert.equal(cleanBackup({ cards: [{ ...card, vence: 5 }], transactions: [] }).cards[0].vence, 5);
+assert.equal(cleanBackup({ cards: [{ ...card, vence: 32 }], transactions: [] }), null);
 
 console.log('calc.js ok');

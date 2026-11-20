@@ -134,6 +134,25 @@ export const mesResumen = (t, cards) => {
   return c && c.tipo !== 'debito' && c.cierre && Number(t.fecha.slice(8)) > c.cierre ? addMonths(ym(t.fecha), 1) : ym(t.fecha);
 };
 
+// Día en que vence el resumen del mes m de una tarjeta: su día de vencimiento, en el mismo mes si cae después del cierre
+// (cierre 5, vence 15) o en el siguiente (cierre 22, vence 5). Sin cierre, el resumen es el mes entero y vence el siguiente.
+// Un 31 en un mes de 30 → el 30.
+export function venceResumen(c, m) {
+  const mes = c.vence > (c.cierre ?? 31) ? m : addMonths(m, 1), [y, mo] = mes.split('-').map(Number);
+  return `${mes}-${pad(Math.min(c.vence, new Date(y, mo, 0).getDate()))}`;
+}
+// Recordatorios: tarjetas de crédito con día de vencimiento cuyo próximo vencimiento cae en los próximos `dias` días
+// (hoy incluido), con lo que suma ese resumen por moneda. Si el resumen no tiene gastos cargados, no hay aviso.
+export function proximosVencimientos(cards, txs, hoy, dias = 7) {
+  const limite = today(new Date(hoy.slice(0, 4), hoy.slice(5, 7) - 1, Number(hoy.slice(8)) + dias)), cur = ym(hoy);
+  return cards.filter(c => c.tipo !== 'debito' && c.vence).flatMap(c => {
+    const resumen = [addMonths(cur, -1), cur, addMonths(cur, 1)].find(m => venceResumen(c, m) >= hoy), fecha = venceResumen(c, resumen);
+    const deLaTarjeta = txs.filter(t => t.cardId === c.id);
+    const montos = MONEDAS.map(moneda => [moneda, sum(deLaTarjeta.filter(t => t.moneda === moneda).map(t => shareInMonth(t, resumen)))]).filter(([, v]) => v > 0);
+    return fecha <= limite && montos.length ? [{ card: c, resumen, fecha, montos }] : [];
+  }).sort((a, b) => a.fecha.localeCompare(b.fecha));
+}
+
 // ---------- Servicios (luz, gas, agua): el gasto puede llevar el consumo del período y la lectura del medidor ----------
 export const UNIDADES = { Luz: 'kWh', Gas: 'm³', Agua: 'm³' };
 // Consumos: los servicios de la casa (Servicios = los demás: celular, cable, expensas…)
@@ -201,7 +220,7 @@ export const MONEDAS = ['ARS', 'USD'];
 const str = v => typeof v === 'string' && v.trim() !== '';
 export const checkCard = c => str(c.id) && str(c.banco) && REDES.includes(c.red) && TIPOS.includes(c.tipo) &&
   /^\d{4}$/.test(c.ultimos4) && /^#[0-9a-f]{6}$/i.test(c.color) &&
-  (c.cierre === undefined || (Number.isInteger(c.cierre) && c.cierre >= 1 && c.cierre <= 31)); // día de cierre: opcional
+  [c.cierre, c.vence].every(d => d === undefined || (Number.isInteger(d) && d >= 1 && d <= 31)); // días de cierre y vencimiento: opcionales
 export const checkTx = t => str(t.id) && Number.isFinite(t.monto) && t.monto > 0 && MONEDAS.includes(t.moneda) &&
   str(t.descripcion) && str(t.categoria) && /^\d{4}-\d{2}-\d{2}$/.test(t.fecha) &&
   Number.isInteger(t.cuotas) && t.cuotas >= 1 && t.cuotas <= 72 && (t.cardId === null || str(t.cardId)) && optNum(t.consumo) && optNum(t.lectura);
@@ -222,7 +241,8 @@ export const checkSub = s => str(s.id) && str(s.nombre) && Number.isFinite(s.mon
 // Los backups viejos no traen "savings", "incomes" ni "subscriptions" (se importan con la lista vacía) ni el tipo de tarjeta (cuentan como crédito).
 export function cleanBackup(d) {
   try {
-    const cards = d.cards.map(({ id, banco, red, tipo = 'credito', ultimos4, color, cierre }) => ({ id, banco, red, tipo, ultimos4, color, ...(cierre !== undefined && { cierre }) }));
+    const cards = d.cards.map(({ id, banco, red, tipo = 'credito', ultimos4, color, cierre, vence }) =>
+      ({ id, banco, red, tipo, ultimos4, color, ...(cierre !== undefined && { cierre }), ...(vence !== undefined && { vence }) }));
     // consumo y lectura solo existen en gastos de luz, gas o agua
     const transactions = d.transactions.map(({ id, monto, moneda, descripcion, categoria, fecha, cardId = null, cuotas, consumo, lectura }) =>
       ({ id, monto, moneda, descripcion, categoria, fecha, cardId, cuotas, ...(consumo !== undefined && { consumo }), ...(lectura !== undefined && { lectura }) }));
