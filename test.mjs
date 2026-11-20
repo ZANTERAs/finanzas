@@ -1,7 +1,7 @@
 // Self-check de calc.js: node test.mjs
 import assert from 'node:assert/strict';
 import { cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, parseMonto, cleanBackup, addMonths, sum, savingsByCategory, newId, byDateDesc, cashWithdrawal, checkSaving, fromAccount, formatMontoTexto, monthSplit,
-  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkTx, subExpense, subPendientes, leerFactura, consumoPorMes, incomeInMonth, checkIncome } from './calc.js';
+  monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkTx, subExpense, subPendientes, leerFactura, consumoPorMes, incomeInMonth, checkIncome, debitaCuenta, retirosSobrantes, mesResumen, mesesDeFilas, retirosAlGuardar } from './calc.js';
 import { sampleData } from './sample.js';
 
 const t = { id: 'a', monto: 1000, moneda: 'ARS', descripcion: 'Heladera', categoria: 'Hogar', fecha: '2026-11-20', cardId: null, cuotas: 3 };
@@ -53,6 +53,24 @@ assert.equal(cleanBackup({ cards: [{ ...card, tipo: 'prepaga' }], transactions: 
 // De dónde sale la plata: efectivo y débito, de la cuenta; crédito y tarjeta borrada, no
 const tarjetas = [{ id: 'cred', tipo: 'credito' }, { id: 'deb', tipo: 'debito' }, { id: 'vieja' }];
 assert.deepEqual([null, 'deb', 'cred', 'vieja', 'borrada'].map(cardId => fromAccount({ cardId }, tarjetas)), [true, true, false, false, false]);
+// Se descuenta de la cuenta de ahorros: solo el débito (el efectivo ya no)
+assert.deepEqual([null, 'deb', 'cred', 'vieja', 'borrada'].map(cardId => debitaCuenta({ cardId }, tarjetas)), [false, true, false, false, false]);
+// Los descuentos viejos de gastos en efectivo sobran; los de débito quedan; uno sin gasto (huérfano) no se toca
+const ret = id => ({ id: `gasto-${id}`, monto: -1, moneda: 'ARS', categoria: 'Cuenta de ahorros', descripcion: '', fecha: '2026-11-01' });
+assert.deepEqual(retirosSobrantes([ret('e'), ret('d'), ret('x'), { ...ret('y'), id: 'a1' }],[{ ...t, id: 'e', cardId: null }, { ...t, id: 'd', cardId: 'deb' }]), ['gasto-e']);
+// Día de cierre: después del cierre la compra pasa al resumen del mes siguiente (y sus cuotas arrancan ahí); débito y efectivo no cambian
+const conCierre = [{ id: 'gal', tipo: 'credito', cierre: 22 }, { id: 'deb', tipo: 'debito', cierre: 22 }, { id: 'sin', tipo: 'credito' }];
+assert.deepEqual([['gal', '2026-11-22'], ['gal', '2026-11-23'], ['gal', '2026-12-30'], ['deb', '2026-11-25'], ['sin', '2026-11-25'], [null, '2026-11-25'], ['borrada', '2026-11-25']]
+  .map(([cardId, fecha]) => mesResumen({ cardId, fecha }, conCierre)), ['2026-11', '2026-12', '2027-01', '2026-11', '2026-11', '2026-11', '2026-11']);
+// La app guarda ese mes en t.mes (no enumerable): las cuotas y los totales lo usan; sin él, el mes de la fecha
+const tarde = Object.defineProperty({ ...t, cardId: 'gal', fecha: '2026-11-25' }, 'mes', { value: '2026-12' }); // 1000 en 3 cuotas
+assert.deepEqual(['2026-11', '2026-12', '2027-02', '2027-03'].map(m => shareInMonth(tarde, m)), [0, 333.33, 333.33, 0]);
+assert.equal(cuotaStatus(tarde, '2026-12').pagadas, 0);
+assert.ok(!('mes' in JSON.parse(JSON.stringify(tarde))) && !('mes' in { ...tarde })); // no se guarda ni se exporta
+// Cierre en el backup: se conserva; fuera de 1–31 se rechaza
+assert.equal(cleanBackup({ cards: [{ ...card, cierre: 22 }], transactions: [] }).cards[0].cierre, 22);
+assert.equal(cleanBackup({ cards: [{ ...card, cierre: 0 }], transactions: [] }), null);
+assert.ok(!('cierre' in cleanBackup({ cards: [card], transactions: [] }).cards[0]));
 // Gasto del mes partido: tarjeta de crédito vs. efectivo/débito; las cuotas cuentan su parte del mes y todo suma el total
 const mes = [
   { ...t, id: 'p1', cardId: 'cred', monto: 900, cuotas: 3 },   // 300 este mes, con tarjeta
@@ -144,9 +162,19 @@ const netflix = { id: 'n1', nombre: 'Netflix', monto: 11999, moneda: 'ARS', dia:
 const claude = { id: 'c1', nombre: 'Claude', monto: 20, moneda: 'USD', dia: 5, cardId: null };
 assert.deepEqual(subExpense(netflix, '2026-11'), { id: 'sub-n1-2026-11', monto: 11999, moneda: 'ARS', descripcion: 'Netflix', categoria: 'Suscripciones', fecha: '2026-11-30', cardId: 'demo-galicia', cuotas: 1 });
 assert.ok(checkTx(subExpense(netflix, '2026-02')) && subExpense(netflix, '2026-02').fecha === '2026-02-28');
-assert.deepEqual(subPendientes([netflix, claude], [], '2026-11-13').map(x => x.id), ['sub-c1-2026-11']);
-assert.deepEqual(subPendientes([netflix, claude], [subExpense(claude, '2026-11')], '2026-11-13'), []);
-assert.deepEqual(subPendientes([netflix, claude], [], '2026-11-30').length, 2);
+// (las cargadas el 1/11 no tienen pendiente de octubre: ese mes todavía no existían)
+const idDel = fecha => newId(new Date(`${fecha}T12:00`).getTime()); // id con el día en que se cargó, como en la app
+const nf = { ...netflix, id: idDel('2026-11-01') }, cl = { ...claude, id: idDel('2026-11-01') };
+assert.deepEqual(subPendientes([nf, cl], [], '2026-11-13').map(x => x.id), [`sub-${cl.id}-2026-11`]);
+assert.deepEqual(subPendientes([nf, cl], [subExpense(cl, '2026-11')], '2026-11-13'), []);
+assert.deepEqual(subPendientes([nf, cl], [], '2026-11-30').length, 2);
+// Mes anterior: si no abriste la app a fin de mes, la del 28/10 se ofrece el 3/11, solo si la suscripción ya existía ese día
+const del28 = { ...netflix, dia: 28 };
+assert.deepEqual(subPendientes([{ ...del28, id: idDel('2026-09-15') }], [], '2026-11-03').map(x => x.fecha), ['2026-10-28']);
+assert.deepEqual(subPendientes([{ ...del28, id: idDel('2026-10-28') }], [], '2026-11-03').map(x => x.fecha), ['2026-10-28']); // cargada ese mismo día
+assert.deepEqual(subPendientes([{ ...del28, id: idDel('2026-11-02') }], [], '2026-11-03'), []);
+assert.deepEqual(subPendientes([del28], [], '2026-11-03').map(x => x.fecha), ['2026-10-28']); // id sin fecha (ejemplo): cuenta como vieja
+assert.deepEqual(subPendientes([del28], [subExpense(del28, '2026-10')], '2026-11-03'), []); // ya cargada: no se repite
 assert.equal(cleanBackup({ cards: [], transactions: [], subscriptions: [{ ...netflix, dia: 32 }] }), null);
 assert.deepEqual(cleanBackup({ cards: [], transactions: [], subscriptions: [{ ...claude, extra: 1 }] }).subscriptions, [claude]);
 assert.deepEqual(cleanBackup({ cards: [], transactions: [] }).subscriptions, []);
@@ -182,5 +210,19 @@ assert.deepEqual(['2026-10', '2026-11', '2030-05'].map(m => incomeInMonth({ ...p
 assert.deepEqual(['2026-10', '2026-11', '2026-12'].map(m => incomeInMonth(ing, m)), [0, 1450000, 0]); // una sola vez
 assert.ok(checkIncome(prestamo) && checkIncome({ ...prestamo, meses: 0 }) && !checkIncome({ ...prestamo, meses: 2.5 }) && !checkIncome({ ...prestamo, meses: -1 }));
 assert.deepEqual(cleanBackup({ cards: [], transactions: [], incomes: [prestamo, ing] }).incomes, [prestamo, ing]);
+
+// "Todo" en Gastos: los meses van del mes en que arranca cada gasto (con el cierre, el del resumen) a su última cuota,
+// así el gráfico suma lo mismo que el total
+const filasTodo = dashboardRows([tarde], conCierre, {});
+assert.deepEqual(mesesDeFilas(filasTodo, '2026-11'), ['2026-11', '2026-12', '2027-01', '2027-02']);
+assert.equal(sum(seriesPorMes(filasTodo, mesesDeFilas(filasTodo, '2026-11'))), 1000);
+
+// Al guardar gastos: débito escribe su "Saqué"; efectivo y crédito borran el que hubiera;
+// tarjeta borrada que ya tenía "Saqué" (era débito): se actualiza con su categoría; sin "Saqué": no se crea
+const gasto = (id, cardId) => ({ ...t, id, cardId, cuotas: 1 });
+const alGuardar = retirosAlGuardar([gasto('a', 'deb'), gasto('b', null), gasto('c', 'cred'), gasto('v', 'borrada'), gasto('d', 'borrada')],
+  tarjetas, [{ ...ret('v'), categoria: 'Ahorros' }], 'Cuenta de ahorros');
+assert.deepEqual(alGuardar.put.map(s => [s.id, s.categoria, s.monto]), [['gasto-a', 'Cuenta de ahorros', -1000], ['gasto-v', 'Ahorros', -1000]]);
+assert.deepEqual(alGuardar.del, ['gasto-b', 'gasto-c', 'gasto-d']);
 
 console.log('calc.js ok');

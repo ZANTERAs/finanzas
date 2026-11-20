@@ -76,6 +76,8 @@ html {
   touch-action: manipulation; /* sin zoom por doble toque */
   scroll-padding: calc(env(safe-area-inset-top) + 64px) 0 calc(env(safe-area-inset-bottom) + 96px); /* lo enfocado no queda bajo "Atrás" ni los botones redondos */
 }
+/* En la compu, sin el rebote de toda la página al llegar al borde; en el iPhone queda el comportamiento de siempre */
+@media (pointer: fine) { html { overscroll-behavior: none; } }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 body {
   margin: 0;
@@ -226,12 +228,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 }
 .btn.danger { color: var(--bad); }
 .file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; } /* el input está oculto: el foco se ve en el botón */
+.file:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; } /* el input está oculto: el foco (de teclado) se ve en el botón */
 
-/* Respuesta al tocar: se achica apenas, como en iOS. Solo se animan transform y opacity. */
-:is(.btn, .fab, .item[href], .bank-card, .menu-row, .cat-link, .back, .tile) { transition: transform .25s var(--ease), opacity .25s var(--ease); }
-:is(.btn, .fab, .item[href], .bank-card, .menu-row, .cat-link, .back:enabled, .tile):active { transform: scale(.97); opacity: .75; }
-/* Al pasar el mouse (compu) se marca más, no menos: borde de acento en el vidrio, un poco más de brillo en lo de color */
+/* Respuesta al tocar: se achica apenas, como en iOS, y se marca más (no menos): borde de acento en el vidrio,
+   un poco más de brillo en lo de color. Solo se anima transform. */
+:is(.btn, .fab, .item[href], .bank-card, .menu-row, .cat-link, .back, .tile) { transition: transform .25s var(--ease); }
+:is(.btn, .fab, .item[href], .bank-card, .menu-row, .cat-link, .back:enabled, .tile):active { transform: scale(.97); }
+:is(.btn:not(.primary), .menu-row, .cat-link, .back:enabled):active, .tile:active svg { border-color: var(--accent); }
+:is(.btn.primary, .fab, .bank-card):active { filter: brightness(1.08); }
+.item[href]:active b { color: var(--accent); }
+/* Al pasar el mouse (compu), lo mismo */
 @media (hover: hover) {
   :is(.btn:not(.primary), .menu-row, .cat-link, .back:enabled):hover, .tile:hover svg { border-color: var(--accent); }
   :is(.btn.primary, .fab, .bank-card):hover { filter: brightness(1.08); }

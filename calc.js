@@ -14,8 +14,10 @@ export const sum = values => values.reduce((s, v) => s + cents(v), 0) / 100;
 // Cuota i (0 = la del mes de compra). Se reparte en centavos para que las cuotas sumen exacto el total.
 export const cuotaAmount = (t, i) => { const c = cents(t.monto); return (Math.round(c * (i + 1) / t.cuotas) - Math.round(c * i / t.cuotas)) / 100; };
 
-// Lo que el movimiento t cuesta en el mes m ('YYYY-MM'): una cuota por mes desde el mes de compra.
-export const shareInMonth = (t, m) => { const i = monthDiff(ym(t.fecha), m); return i >= 0 && i < t.cuotas ? cuotaAmount(t, i) : 0; };
+// Mes en que arranca un gasto: t.mes (el del resumen, si la app lo calculó con el cierre de la tarjeta) o el de su fecha
+const inicio = t => t.mes ?? ym(t.fecha);
+// Lo que el movimiento t cuesta en el mes m ('YYYY-MM'): una cuota por mes desde el mes en que arranca.
+export const shareInMonth = (t, m) => { const i = monthDiff(inicio(t), m); return i >= 0 && i < t.cuotas ? cuotaAmount(t, i) : 0; };
 
 // Pesos y dólares no se suman: cada total es de una moneda (las pantallas muestran un renglón por moneda).
 // shortcut: los gráficos (por categoría y por mes) muestran solo pesos; sumar dólares necesita una cotización.
@@ -54,6 +56,10 @@ export function dashboardRows(txs, cards, { months = null, categoria = '', pago 
       && (!pago || (pago === 'cuenta') === fromAccount(t, cards)) && (!q || sinTildes(t.descripcion).includes(q)))
     .sort(orders[orden] ?? orders.nuevos);
 }
+// Meses que cubren unas filas, siempre con `cur`: del mes en que arranca el primer gasto (el del resumen, si pasó el cierre)
+// a su última cuota. Así el gráfico de "Todo" suma lo mismo que el total.
+export const mesesDeFilas = (rows, cur) => monthRange([cur, ...rows.map(r => inicio(r.t))].sort()[0],
+  [cur, ...rows.map(r => addMonths(inicio(r.t), r.t.cuotas - 1))].sort().at(-1));
 export const rowsByCategory = (rows, moneda = 'ARS') => groupSum(rows.map(r => ({ ...r.t, monto: r.monto })), x => x.monto, moneda);
 // Serie por día de un mes: cada gasto en el día de su fecha (una cuota de una compra vieja cae en el mismo número de día).
 export function seriesPorDia(rows, m, moneda = 'ARS') {
@@ -66,7 +72,7 @@ export const seriesPorMes = (rows, months, moneda = 'ARS') =>
 
 // Pagadas = cuotas de meses anteriores a m; la de m cuenta como pendiente de este mes.
 export function cuotaStatus(t, m) {
-  const n = t.cuotas, pagadas = Math.min(n, Math.max(0, monthDiff(ym(t.fecha), m))), c = cents(t.monto);
+  const n = t.cuotas, pagadas = Math.min(n, Math.max(0, monthDiff(inicio(t), m))), c = cents(t.monto);
   return { pagadas, restantes: n - pagadas, restante: (c - Math.round(c * pagadas / n)) / 100, esteMes: shareInMonth(t, m) };
 }
 
@@ -96,12 +102,37 @@ export const newId = (now = Date.now()) => `${now.toString(36).padStart(9, '0')}
 const loadedAt = x => /^[0-9a-z]{9}-/.test(x.id) ? x.id.slice(0, 9) : '';
 export const byDateDesc = (a, b) => b.fecha.localeCompare(a.fecha) || loadedAt(b).localeCompare(loadedAt(a));
 
-// La plata sale de la cuenta (y no del resumen de la tarjeta) si se pagó en efectivo / transferencia o con débito.
+// No va al resumen de la tarjeta de crédito: efectivo / transferencia o débito (el reparto "Tarjeta" / "Efectivo / débito").
 // Una tarjeta sin tipo (de antes de que existiera) cuenta como crédito.
 export const fromAccount = (t, cards) => !t.cardId || cards.find(c => c.id === t.cardId)?.tipo === 'debito';
-// Ese gasto → un "Saqué" en la cuenta de ahorros, atado al gasto por el id.
+// Solo el débito se descuenta de la cuenta de ahorros; el efectivo no (es plata que ya estaba afuera).
+export const debitaCuenta = (t, cards) => !!t.cardId && cards.find(c => c.id === t.cardId)?.tipo === 'debito';
+// Ese gasto con débito → un "Saqué" en la cuenta de ahorros, atado al gasto por el id.
 export const cashWithdrawal = (t, categoria) =>
   ({ id: `gasto-${t.id}`, monto: -t.monto, moneda: t.moneda, categoria, descripcion: `Gasto: ${t.descripcion}`, fecha: t.fecha });
+// Qué hacer en Ahorros al guardar gastos: el de débito escribe (o actualiza) su "Saqué"; efectivo o crédito borran el que hubiera.
+// Tarjeta borrada: si ya tenía "Saqué" era débito, así que se actualiza con su categoría de siempre; si no tenía, nada.
+export function retirosAlGuardar(ts, cards, savings, categoria) {
+  const previo = t => savings.find(s => s.id === `gasto-${t.id}`);
+  const descuenta = t => debitaCuenta(t, cards) || (!!t.cardId && !cards.some(c => c.id === t.cardId) && !!previo(t));
+  return {
+    put: ts.filter(descuenta).map(t => cashWithdrawal(t, previo(t)?.categoria ?? categoria)),
+    del: ts.filter(t => !descuenta(t)).map(t => `gasto-${t.id}`),
+  };
+}
+// Descuentos que ya no corresponden: los de gastos en efectivo / transferencia (antes también se descontaban).
+// Solo esos: el de un débito cuya tarjeta después se borró sigue valiendo (esa plata sí salió de la cuenta).
+export const retirosSobrantes = (savings, txs) => {
+  const porId = new Map(txs.map(t => [t.id, t])); // una pasada, no una búsqueda por cada descuento
+  return savings.filter(s => s.id.startsWith('gasto-') && porId.get(s.id.slice(6))?.cardId === null).map(s => s.id);
+};
+
+// Mes del resumen en que entra un gasto: con tarjeta de crédito que tiene día de cierre, lo comprado después del cierre
+// pasa al resumen (y al pago) del mes siguiente, y ahí arrancan sus cuotas. Todo lo demás, el mes de la fecha.
+export const mesResumen = (t, cards) => {
+  const c = t.cardId && cards.find(x => x.id === t.cardId);
+  return c && c.tipo !== 'debito' && c.cierre && Number(t.fecha.slice(8)) > c.cierre ? addMonths(ym(t.fecha), 1) : ym(t.fecha);
+};
 
 // ---------- Servicios (luz, gas, agua): el gasto puede llevar el consumo del período y la lectura del medidor ----------
 export const UNIDADES = { Luz: 'kWh', Gas: 'm³', Agua: 'm³' };
@@ -121,8 +152,13 @@ export function subExpense(s, m) {
   const [y, mo] = m.split('-').map(Number), dia = Math.min(s.dia, new Date(y, mo, 0).getDate());
   return { id: `sub-${s.id}-${m}`, monto: s.monto, moneda: s.moneda, descripcion: s.nombre, categoria: 'Suscripciones', fecha: `${m}-${pad(dia)}`, cardId: s.cardId, cuotas: 1 };
 }
-// Los gastos de este mes de las suscripciones que ya se cobraron (su día ya llegó) y todavía no se cargaron
-export const subPendientes = (subs, txs, hoy) => subs.map(s => subExpense(s, ym(hoy))).filter(t => t.fecha <= hoy && !txs.some(x => x.id === t.id));
+// Día en que se cargó algo con newId (la hora va al principio del id); null si el id no la trae (datos de ejemplo)
+const cargadoEl = x => loadedAt(x) ? today(new Date(parseInt(loadedAt(x), 36))) : null;
+// Gastos de suscripciones ya cobrados (su día ya llegó) y todavía no cargados: los de este mes y los del anterior,
+// por si no abriste la app a fin de mes. Del anterior, solo si la suscripción ya estaba cargada ese día.
+export const subPendientes = (subs, txs, hoy) => [addMonths(ym(hoy), -1), ym(hoy)]
+  .flatMap(m => subs.map(s => subExpense(s, m)).filter((t, i) => m === ym(hoy) || !cargadoEl(subs[i]) || cargadoEl(subs[i]) <= t.fecha))
+  .filter(t => t.fecha <= hoy && !txs.some(x => x.id === t.id));
 
 // ---------- Leer una factura: el texto copiado de la foto (en el iPhone, con Texto en vivo) ----------
 // shortcut: reconoce las empresas grandes y los rótulos comunes ("Total a pagar", "Consumo … kWh / m3", "Lectura actual"); sumar acá las que no lea
@@ -160,11 +196,12 @@ export function leerFactura(texto) {
 }
 
 export const REDES = ['Visa', 'Mastercard', 'American Express'];
-export const TIPOS = ['credito', 'debito'];
+const TIPOS = ['credito', 'debito'];
 export const MONEDAS = ['ARS', 'USD'];
 const str = v => typeof v === 'string' && v.trim() !== '';
 export const checkCard = c => str(c.id) && str(c.banco) && REDES.includes(c.red) && TIPOS.includes(c.tipo) &&
-  /^\d{4}$/.test(c.ultimos4) && /^#[0-9a-f]{6}$/i.test(c.color);
+  /^\d{4}$/.test(c.ultimos4) && /^#[0-9a-f]{6}$/i.test(c.color) &&
+  (c.cierre === undefined || (Number.isInteger(c.cierre) && c.cierre >= 1 && c.cierre <= 31)); // día de cierre: opcional
 export const checkTx = t => str(t.id) && Number.isFinite(t.monto) && t.monto > 0 && MONEDAS.includes(t.moneda) &&
   str(t.descripcion) && str(t.categoria) && /^\d{4}-\d{2}-\d{2}$/.test(t.fecha) &&
   Number.isInteger(t.cuotas) && t.cuotas >= 1 && t.cuotas <= 72 && (t.cardId === null || str(t.cardId)) && optNum(t.consumo) && optNum(t.lectura);
@@ -185,7 +222,7 @@ export const checkSub = s => str(s.id) && str(s.nombre) && Number.isFinite(s.mon
 // Los backups viejos no traen "savings", "incomes" ni "subscriptions" (se importan con la lista vacía) ni el tipo de tarjeta (cuentan como crédito).
 export function cleanBackup(d) {
   try {
-    const cards = d.cards.map(({ id, banco, red, tipo = 'credito', ultimos4, color }) => ({ id, banco, red, tipo, ultimos4, color }));
+    const cards = d.cards.map(({ id, banco, red, tipo = 'credito', ultimos4, color, cierre }) => ({ id, banco, red, tipo, ultimos4, color, ...(cierre !== undefined && { cierre }) }));
     // consumo y lectura solo existen en gastos de luz, gas o agua
     const transactions = d.transactions.map(({ id, monto, moneda, descripcion, categoria, fecha, cardId = null, cuotas, consumo, lectura }) =>
       ({ id, monto, moneda, descripcion, categoria, fecha, cardId, cuotas, ...(consumo !== undefined && { consumo }), ...(lectura !== undefined && { lectura }) }));

@@ -5,7 +5,13 @@ const open = () => conn ||= new Promise((res, rej) => {
   const r = indexedDB.open('finanzas', 4);
   // v2 agrega "savings", v3 "incomes" y v4 "subscriptions"; solo crea lo que falta, así no se pierde nada de antes.
   r.onupgradeneeded = () => STORES.forEach(s => r.result.objectStoreNames.contains(s) || r.result.createObjectStore(s, { keyPath: 'id' }));
-  r.onsuccess = () => res(r.result);
+  // Una pestaña con la versión vieja abierta frena la actualización de la base: avisar en vez de esperar para siempre
+  r.onblocked = () => rej(new Error('la app está abierta en otra pestaña; cerrala y volvé a abrir esta'));
+  r.onsuccess = () => {
+    // Y al revés: si otra pestaña trae una versión nueva, esta suelta la base para no frenarla (la próxima operación la reabre)
+    r.result.onversionchange = () => { r.result.close(); conn = null; };
+    res(r.result);
+  };
   r.onerror = () => rej(r.error);
 });
 

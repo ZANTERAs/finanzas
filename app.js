@@ -1,9 +1,10 @@
 import { loadAll, put, del, save, write } from './db.js';
 import {
   today, ym, addMonths, money, parseMonto, cuotaAmount, shareInMonth, monthTotal, byCategory, cuotaStatus, sum,
-  REDES, MONEDAS, checkCard, checkTx, cleanBackup, savingsByCategory, checkSaving, newId, byDateDesc, cashWithdrawal, fromAccount, formatMontoTexto, monthSplit,
+  REDES, MONEDAS, checkCard, checkTx, cleanBackup, savingsByCategory, checkSaving, newId, byDateDesc, formatMontoTexto, monthSplit,
   monthRange, dashboardRows, rowsByCategory, seriesPorDia, seriesPorMes, checkIncome,
   UNIDADES, subExpense, subPendientes, checkSub, leerFactura, SERVICIOS, consumoPorMes, incomeInMonth,
+  debitaCuenta, retirosSobrantes, mesResumen, mesesDeFilas, retirosAlGuardar,
 } from './calc.js';
 import { sampleData } from './sample.js';
 
@@ -30,6 +31,9 @@ const empty = msg => `<li class="empty">${msg}</li>`;
 const reload = async () => {
   [cards, txs, savings, incomes, subs] = await loadAll();
   cards.sort((a, b) => a.banco.localeCompare(b.banco, 'es')); // la base las devuelve por id (al azar)
+  // Mes del resumen de cada gasto (cambia si se edita el cierre de la tarjeta, por eso se calcula al cargar).
+  // No enumerable: los totales y las cuotas lo leen, pero no se guarda, no se exporta y no pasa a una copia ({ ...t }).
+  txs.forEach(t => Object.defineProperty(t, 'mes', { value: mesResumen(t, cards) }));
 };
 const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 // Pesos y dólares no se suman: un renglón por cada moneda usada (siempre al menos pesos).
@@ -80,23 +84,31 @@ const busy = fn => async e => {
 // Formularios a medio cargar: se avisa antes de salir sin guardar.
 let dirty = false, lastHash = location.hash;
 document.addEventListener('input', e => { if (e.target.form && !('filtro' in e.target.form.dataset)) dirty = true; });
+// También al recargar o cerrar la pestaña (en la compu; el iPhone no muestra este aviso)
+addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 const leave = hash => { dirty = false; location.hash = hash; };
+// Después de guardar o borrar desde un formulario dentro de una hoja: datos al día y de vuelta a la hoja, sin sumar al historial
+async function volverA(hash) { await reload(); history.replaceState(null, '', hash); route(); }
 
 const monthDate = m => new Date(m.slice(0, 4), m.slice(5) - 1, 1);
 const monthName = m => monthDate(m).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }).replace(' de ', ' ');
-const monthShort = m => monthDate(m).toLocaleDateString('es-AR', { month: 'short' }).replace('.', '');
-const fmtDate = f => new Date(f.slice(0, 4), f.slice(5, 7) - 1, f.slice(8)).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+// conAnio: con el año ("nov 25", "1 nov 2026") cuando la lista o el gráfico cruza años
+const monthShort = (m, conAnio = false) => monthDate(m).toLocaleDateString('es-AR', { month: 'short', ...(conAnio && { year: '2-digit' }) }).replace('.', '');
+const fmtDate = (f, conAnio = false) => new Date(f.slice(0, 4), f.slice(5, 7) - 1, f.slice(8))
+  .toLocaleDateString('es-AR', { day: 'numeric', month: 'short', ...(conAnio && { year: 'numeric' }) }).replace(/ de /g, ' ');
 
 // Texto negro o blanco según qué tan claro sea el color de la tarjeta.
 const ink = hex => { const n = parseInt(hex.slice(1), 16); return ((n >> 16) * 299 + (n >> 8 & 255) * 587 + (n & 255) * 114) / 1000 > 150 ? '#0b0b0b' : '#ffffff'; };
 const cardStyle = c => `--card:${c.color};--card-ink:${ink(c.color)}`;
-const cardFace = c => `<span class="top"><span class="bank">${esc(c.banco)}</span><span class="tipo">${c.tipo === 'debito' ? 'Débito' : 'Crédito'}</span></span>`
+const cardFace = c => `<span class="top"><span class="bank">${esc(c.banco)}</span><span class="tipo">${c.tipo === 'debito' ? 'Débito' : `Crédito${c.cierre ? ` · cierre ${c.cierre}` : ''}`}</span></span>`
   + `<span class="num">•••• ${esc(c.ultimos4)}</span><span class="net">${esc(c.red)}</span>`;
 const cardOf = t => cards.find(c => c.id === t.cardId);
 const cardLabel = t => { const c = cardOf(t); return c ? `${c.banco} ${c.ultimos4}` : t.cardId ? 'Tarjeta borrada' : 'Efectivo / transferencia'; };
 
 const numTxt = n => n.toLocaleString('es-AR'); // 10500 → "10.500", 12.5 → "12,5" (y parseMonto lo vuelve a leer)
-const consumoTxt = t => t.consumo !== undefined ? ` ${numTxt(t.consumo)} ${UNIDADES[t.categoria] ?? ''}` : '';
+// Número y unidad con un espacio que no corta renglón: "250 kWh" nunca queda partido
+const conUnidad = (n, u) => `${numTxt(n)} ${u}`;
+const consumoTxt = t => t.consumo !== undefined ? ` ${conUnidad(t.consumo, UNIDADES[t.categoria] ?? '')}` : '';
 const txItem = (t, amount, extra = '') => `<li><a class="item" href="#nuevo/${esc(t.id)}">
   <span class="dot" style="${cardOf(t) ? `background:${cardOf(t).color}` : ''}"></span>
   <span class="grow"><b>${esc(t.descripcion)}</b><small>${esc(t.categoria)}${consumoTxt(t)} · ${fmtDate(t.fecha)} · ${esc(cardLabel(t))}${extra}</small></span>
@@ -223,11 +235,20 @@ const views = {
   },
 
   // Hoja que abre el total del mes: todos los gastos con filtros, resumen, gráficos y la lista.
-  // Los filtros quedan como estaban al volver (por ejemplo, después de editar un gasto de la lista).
-  gastos() {
+  // Los filtros van en la dirección (#gastos/periodo=12m&orden=mayor…): sobreviven a recargar y a volver de editar un gasto.
+  // Al abrir la hoja (desdeUrl) se leen de ahí, y sin nada son los de siempre; al tocar un filtro se usa el formulario.
+  gastos(id, desdeUrl = true) {
     const cur = ym(today()), f = $('#filtros');
+    let cat = f.categoria.value;
+    if (desdeUrl) {
+      const pedido = new URLSearchParams(location.hash.slice(1).split('/')[1] ?? ''); // sin decodificar antes: un "&" buscado no rompe nada
+      f.reset();
+      for (const k of ['periodo', 'orden', 'pago', 'texto']) if (pedido.get(k)) f.elements[k].value = pedido.get(k);
+      for (const s of [f.periodo, f.orden, f.pago]) if (s.selectedIndex < 0) s.selectedIndex = 0; // un valor que no existe → el primero
+      cat = pedido.get('categoria') ?? '';
+    }
     const months = { mes: [cur], anterior: [addMonths(cur, -1)], '3m': monthRange(addMonths(cur, -2), cur), '12m': monthRange(addMonths(cur, -11), cur) }[f.periodo.value] ?? null;
-    const cats = [...new Set(txs.map(t => t.categoria))].sort((a, b) => a.localeCompare(b, 'es')), cat = f.categoria.value;
+    const cats = [...new Set(txs.map(t => t.categoria))].sort((a, b) => a.localeCompare(b, 'es'));
     f.categoria.innerHTML = '<option value="">Todas</option>' + cats.map(c => `<option>${esc(c)}</option>`).join('');
     f.categoria.value = cats.includes(cat) ? cat : '';
     const rows = dashboardRows(txs, cards, { months, categoria: f.categoria.value, pago: f.pago.value, texto: f.texto.value, orden: f.orden.value });
@@ -243,13 +264,12 @@ const views = {
 
     categoryChart('chart-g-cat', rowsByCategory(rows));
     // En el tiempo: un solo mes va por día; si no, por mes. "Todo" va del primer gasto a la última cuota (suma lo mismo que el total).
-    const meses = months ?? monthRange([cur, ...rows.map(r => ym(r.t.fecha))].sort()[0],
-      [cur, ...rows.map(r => addMonths(ym(r.t.fecha), r.t.cuotas - 1))].sort().at(-1));
+    const meses = months ?? mesesDeFilas(rows, cur);
     const unMes = meses.length === 1;
     $('#g-tiempo-titulo').textContent = unMes ? `Por día · ${monthName(meses[0])}` : 'Por mes';
     $('#chart-g-tiempo').closest('.box').hidden = !rows.some(r => r.t.moneda === 'ARS');
     const data = unMes ? seriesPorDia(rows, meses[0]) : seriesPorMes(rows, meses);
-    barChart('chart-g-tiempo', unMes ? data.map((_, i) => String(i + 1)) : meses.map(m => meses.length > 12 ? `${monthShort(m)} ${m.slice(2, 4)}` : monthShort(m)), data);
+    barChart('chart-g-tiempo', unMes ? data.map((_, i) => String(i + 1)) : meses.map(m => monthShort(m, meses.length > 12)), data);
 
     $('#g-lista').innerHTML = rows.map(({ t, monto }) => txItem(t, monto, t.cuotas < 2 ? ''
       : unMes && months ? ` · cuota ${cuotaStatus(t, meses[0]).pagadas + 1}/${t.cuotas}` : ` · ${t.cuotas} cuotas`)).join('')
@@ -345,7 +365,9 @@ const views = {
     porMoneda('#subs-total', m => sum(subs.filter(s => s.moneda === m).map(s => s.monto)), usadas(subs));
     const pend = subPendientes(subs, txs, hoy);
     $('#subs-cargar').hidden = !pend.length;
-    $('#subs-cargar').textContent = pend.length === 1 ? `Cargar el gasto de ${pend[0].descripcion} de ${mes}` : `Cargar los ${pend.length} gastos de ${mes}`;
+    // Puede haber del mes anterior (si no abriste la app a fin de mes)
+    $('#subs-cargar').textContent = pend.length === 1 ? `Cargar el gasto de ${pend[0].descripcion} de ${monthName(ym(pend[0].fecha)).split(' ')[0]}`
+      : pend.every(t => ym(t.fecha) === cur) ? `Cargar los ${pend.length} gastos de ${mes}` : `Cargar los ${pend.length} gastos pendientes`;
     $('#sub-sugeridas').innerHTML = SUB_SUGERIDAS.map(c => `<option value="${esc(c)}">`).join('');
     $('#subs-lista').innerHTML = [...subs].sort((a, b) => a.dia - b.dia || a.nombre.localeCompare(b.nombre, 'es')).map(s => {
       const t = subExpense(s, cur);
@@ -366,7 +388,7 @@ const views = {
     porMoneda('#consumos-total', m => monthTotal(serv, cur, m), usadas(serv.filter(t => shareInMonth(t, cur))));
     // Hasta 12 meses, desde el primero con datos
     const primero = serv.reduce((min, t) => ym(t.fecha) < min ? ym(t.fecha) : min, cur);
-    const months = monthRange(primero > addMonths(cur, -11) ? primero : addMonths(cur, -11), cur), labels = months.map(monthShort);
+    const months = monthRange(primero > addMonths(cur, -11) ? primero : addMonths(cur, -11), cur), labels = months.map(m => monthShort(m));
     $('#chart-consumos').closest('.box').hidden = !serv.length;
     barChart('chart-consumos', labels, months.map(m => monthTotal(serv, m)), { highlight: months.length - 1 });
     const cats = SERVICIOS.filter(c => serv.some(t => t.categoria === c));
@@ -379,7 +401,7 @@ const views = {
       return `<div class="box servicio">
         <h2>${c === 'Servicios' ? 'Otros servicios' : esc(c)}</h2>
         <dl class="split"><div><dt>Este mes</dt><dd>${money(monthTotal(xs, cur))}</dd></div><div><dt>Promedio por mes</dt><dd>${money(prom)}</dd></div></dl>
-        <p class="muted cap">Última: ${esc(last.descripcion)} · ${fmtDate(last.fecha)}${last.consumo !== undefined ? ` · ${numTxt(last.consumo)} ${u}` : ''}</p>
+        <p class="muted cap">Última: ${esc(last.descripcion)} · ${fmtDate(last.fecha)}${last.consumo !== undefined ? ` · ${conUnidad(last.consumo, u)}` : ''}</p>
         <p class="muted cap">${conConsumo ? `Consumo por mes (${u})` : 'Pagado por mes'}</p>
         <div class="chart-wrap chico"><canvas id="chart-serv-${c}" role="img" aria-label="${conConsumo ? `Consumo de ${c.toLowerCase()} por mes` : `Pagado en ${c.toLowerCase()} por mes`}"></canvas></div>
       </div>`;
@@ -387,7 +409,7 @@ const views = {
     for (const c of cats) {
       const xs = serv.filter(t => t.categoria === c), u = UNIDADES[c];
       xs.some(t => t.consumo !== undefined)
-        ? barChart(`chart-serv-${c}`, labels, consumoPorMes(xs, c, months), { highlight: months.length - 1, fmt: v => `${numTxt(v)} ${u}` })
+        ? barChart(`chart-serv-${c}`, labels, consumoPorMes(xs, c, months), { highlight: months.length - 1, fmt: v => conUnidad(v, u) })
         : barChart(`chart-serv-${c}`, labels, months.map(m => monthTotal(xs, m)), { highlight: months.length - 1 });
     }
   },
@@ -414,7 +436,7 @@ const views = {
       .map(m => `<option value="${m}"${m === histSel ? ' selected' : ''}>${monthName(m)}${m === cur ? ' (actual)' : ''}</option>`).join('');
 
     const last12 = months.slice(-12);
-    barChart('chart-meses', last12.map(monthShort), last12.map(m => monthTotal(txs, m)), {
+    barChart('chart-meses', last12.map(m => monthShort(m)), last12.map(m => monthTotal(txs, m)), {
       highlight: last12.indexOf(histSel), onPick: i => pickMonth(last12[i]),
     });
 
@@ -447,8 +469,20 @@ const views = {
 // El mes elegido queda en la URL sin volver arriba de todo.
 function pickMonth(m) { history.replaceState(null, '', `#historial/${m}`); lastHash = location.hash; views.historial(m); }
 $('#hist-mes').addEventListener('change', e => pickMonth(e.target.value));
-// Filtros de Gastos: se aplican mientras elegís o escribís (Enter en Buscar no recarga la página)
-$('#filtros').addEventListener('input', () => views.gastos());
+// Filtros de Gastos: se aplican mientras elegís o escribís (en Buscar, cuando parás un momento: así no se redibujan
+// la lista y los gráficos en cada tecla) y quedan en la dirección. Enter en Buscar no recarga la página.
+let filtroEspera;
+$('#filtros').addEventListener('input', e => {
+  clearTimeout(filtroEspera);
+  filtroEspera = setTimeout(() => {
+    if (current.view !== 'gastos') return; // se cerró la hoja mientras esperaba
+    const f = $('#filtros'), porDefecto = { periodo: 'mes', orden: 'nuevos' };
+    const qs = String(new URLSearchParams([...new FormData(f)].filter(([k, v]) => v !== '' && v !== porDefecto[k])));
+    history.replaceState(null, '', `#gastos${qs ? `/${qs}` : ''}`);
+    lastHash = pageHash = location.hash; // Atrás desde Nuevo gasto vuelve con estos filtros
+    views.gastos(qs, false);
+  }, e.target.name === 'texto' ? 150 : 0);
+});
 $('#filtros').addEventListener('submit', e => e.preventDefault());
 
 function onHashChange() {
@@ -485,7 +519,7 @@ function route() {
 function upHash() {
   const [name, id] = location.hash.slice(1).split('/');
   if (name === 'nuevo') return pageHash;
-  if (id && name !== 'historial') return `#${name}`; // en Historial el id es el mes elegido, no un formulario
+  if (id && !['historial', 'gastos'].includes(name)) return `#${name}`; // ahí el id es el mes o los filtros, no un formulario
   return name && name !== 'inicio' ? '#inicio' : null;
 }
 const goUp = () => { const h = upHash(); if (h) location.hash = h; };
@@ -505,20 +539,32 @@ txForm.querySelectorAll('[name=moneda]').forEach(r => r.addEventListener('change
 // La tarjeta que queda en el centro es la elegida; tocar una que asoma (o moverse con las flechas) la trae al centro.
 const pickerCarousel = carousel($('#card-picker'), $('#picker-dots'), i => { $('#card-picker').children[i].querySelector('input').checked = true; pagoHint(); });
 $('#card-picker').addEventListener('change', e => { e.target.parentElement.scrollIntoView({ behavior: motion(), inline: 'center', block: 'nearest' }); pagoHint(); });
-// Con efectivo / transferencia o débito se avisa de dónde sale la plata.
+// Debajo de las tarjetas: con débito, de dónde sale la plata; con crédito, si la compra ya pasó al resumen del mes siguiente.
 const cuentaDe = () => savings.find(s => /^(cuenta de )?ahorros$/i.test(s.categoria))?.categoria ?? 'Cuenta de ahorros';
 function pagoHint() {
-  const v = txForm.querySelector('[name=cardId]:checked')?.value;
-  $('#pago-hint').hidden = v === undefined || !fromAccount({ cardId: v || null }, cards);
-  $('#pago-hint').textContent = `Se descuenta de “${cuentaDe()}”, en Ahorros.`;
+  const v = txForm.querySelector('[name=cardId]:checked')?.value, t = { cardId: v || null, fecha: txForm.fecha.value || today() };
+  const mes = mesResumen(t, cards);
+  $('#pago-hint').textContent = debitaCuenta(t, cards) ? `Se descuenta de “${cuentaDe()}”, en Ahorros.`
+    : mes !== ym(t.fecha) ? `Va al resumen de ${monthName(mes)}: esta tarjeta cierra el ${cardOf(t).cierre}.` : '';
+  $('#pago-hint').hidden = !$('#pago-hint').textContent;
+}
+txForm.fecha.addEventListener('input', pagoHint);
+// Antes los gastos en efectivo / transferencia también se descontaban de Ahorros: esos descuentos se borran (los gastos quedan).
+// Corre al abrir la app y al importar un backup; si no hay ninguno, no hace nada.
+// Si falla (por ejemplo, sin espacio) no frena nada: es opcional y se reintenta la próxima vez que se abre la app.
+async function limpiarRetiros() {
+  try {
+    const sobran = retirosSobrantes(savings, txs);
+    if (sobran.length) { await write({ del: { savings: sobran } }); await reload(); }
+  } catch (err) { console.warn('No se pudieron limpiar los descuentos viejos:', err); }
 }
 
-// Guarda gastos. Los de efectivo / transferencia o débito además se descuentan de la cuenta de ahorros
-// (si un gasto pasa a crédito, ese descuento se borra). Todo junto: o se guarda todo o nada.
-const txWrite = ts => write({
-  put: { transactions: ts, savings: ts.filter(t => fromAccount(t, cards)).map(t => cashWithdrawal(t, cuentaDe())) },
-  del: { savings: ts.filter(t => !fromAccount(t, cards)).map(t => `gasto-${t.id}`) },
-});
+// Guarda gastos. Los de débito además se descuentan de la cuenta de ahorros (si un gasto deja de ser con débito,
+// ese descuento se borra; ver retirosAlGuardar). Todo junto: o se guarda todo o nada.
+const txWrite = ts => {
+  const ret = retirosAlGuardar(ts, cards, savings, cuentaDe());
+  return write({ put: { transactions: ts, savings: ret.put }, del: { savings: ret.del } });
+};
 
 // Luz, gas y agua muestran Consumo (con su unidad) y Lectura del medidor
 function consumoFields() {
@@ -535,13 +581,13 @@ function completarConFactura() {
   if (r.categoria) { f.categoria.value = r.categoria; consumoFields(); hecho.push(r.categoria); }
   if (r.descripcion && !f.descripcion.value.trim()) f.descripcion.value = r.descripcion;
   if (r.monto) { f.monto.value = montoTexto(r.monto); f.moneda.value = 'ARS'; hecho.push(`total ${money(r.monto)}`); }
-  if (r.consumo !== undefined) { f.consumo.value = numTxt(r.consumo); hecho.push(`consumo ${numTxt(r.consumo)} ${UNIDADES[f.categoria.value] ?? ''}`.trim()); }
+  if (r.consumo !== undefined) { f.consumo.value = numTxt(r.consumo); hecho.push(`consumo ${conUnidad(r.consumo, UNIDADES[f.categoria.value] ?? '')}`.trim()); }
   if (r.lectura !== undefined) { f.lectura.value = numTxt(r.lectura); hecho.push(`lectura ${numTxt(r.lectura)}`); }
   cuotaHint();
   if (hecho.length) dirty = true; // lo leído se perdería al salir sin guardar: que avise
   $('#factura-resultado').textContent = hecho.length
-    ? `Completé: ${hecho.join(', ')}. Revisalo antes de guardar.`
-    : 'No encontré el total ni el consumo en ese texto. Probá copiarlo de nuevo o completalo a mano.';
+    ? `Leído de la factura: ${hecho.join(', ')}. Revisalo antes de guardar.`
+    : 'No se encontró el total ni el consumo en ese texto. Probá copiarlo de nuevo o completalo a mano.';
 }
 
 // Foto de la factura → texto, con Tesseract (en vendor/tesseract: funciona sin internet y la foto no sale del teléfono).
@@ -581,7 +627,7 @@ async function leerFoto(file) {
     txForm.factura.value = data.text.trim();
     completarConFactura();
   } catch (err) {
-    out.textContent = `No pude leer la foto (${err?.message ?? err}). Probá con otra más nítida o pegá el texto.`;
+    out.textContent = `No se pudo leer la foto (${err?.message ?? err}). Probá con otra más nítida o pegá el texto.`;
   } finally {
     boton.classList.remove('ocupado');
     input.disabled = false;
@@ -647,6 +693,8 @@ function openCardForm(c) {
   cardForm.tipo.value = c?.tipo || 'credito';
   cardForm.ultimos4.value = c?.ultimos4 || '';
   cardForm.color.value = c?.color || '#555555';
+  cardForm.cierre.value = c?.cierre ?? '';
+  cierreField();
   $('#card-borrar').hidden = !c;
   $('#card-acciones').hidden = true;
   cardForm.hidden = false;
@@ -661,7 +709,11 @@ cardForm.banco.addEventListener('input', () => {
   const hit = Object.entries(BANCOS).find(([b]) => b.toLowerCase() === cardForm.banco.value.trim().toLowerCase());
   if (hit) cardForm.color.value = hit[1];
 });
+// Día de cierre: solo para crédito (el débito no tiene resumen)
+const cierreField = () => { $('#cierre-campo').hidden = cardForm.tipo.value !== 'credito'; };
+cardForm.querySelectorAll('[name=tipo]').forEach(r => r.addEventListener('change', cierreField));
 cardForm.addEventListener('submit', busy(async () => {
+  const cierre = cardForm.cierre.value.trim() === '' ? undefined : Number(cardForm.cierre.value);
   const c = {
     id: editCard?.id || newId(),
     banco: cardForm.banco.value.trim(),
@@ -669,8 +721,10 @@ cardForm.addEventListener('submit', busy(async () => {
     tipo: cardForm.tipo.value,
     ultimos4: cardForm.ultimos4.value.trim(),
     color: cardForm.color.value,
+    ...(cardForm.tipo.value === 'credito' && cierre !== undefined && { cierre }),
   };
   if (!c.banco) return fieldError(cardForm.banco, 'Escribí el banco, por ejemplo “Galicia”.');
+  if (c.cierre !== undefined && !(Number.isInteger(c.cierre) && c.cierre >= 1 && c.cierre <= 31)) return fieldError(cardForm.cierre, 'Poné un día del 1 al 31, o dejalo vacío.');
   if (!checkCard(c)) return alert('Revisá los datos: van exactamente los últimos 4 dígitos de la tarjeta.');
   await put('cards', c);
   await reload();
@@ -702,7 +756,6 @@ function openSavingForm(s) {
   savForm.scrollIntoView({ behavior: motion(), block: 'start' });
 }
 function closeSavingForm() { savForm.hidden = true; $('#ahorro-nuevo').hidden = false; editSaving = null; dirty = false; }
-const backToAhorros = async () => { await reload(); history.replaceState(null, '', '#ahorros'); route(); };
 
 montoVivo(savForm.monto);
 $('#ahorro-cancelar').addEventListener('click', () => leave('#ahorros'));
@@ -722,12 +775,12 @@ savForm.addEventListener('submit', busy(async () => {
   };
   if (!checkSaving(s)) return alert('Revisá los datos: elegí una fecha.');
   await put('savings', s);
-  await backToAhorros();
+  await volverA('#ahorros');
 }));
 $('#ahorro-borrar').addEventListener('click', async () => {
   if (!editSaving || !confirm(`¿Borrar este movimiento de “${editSaving.categoria}”?`)) return;
   await del('savings', editSaving.id);
-  await backToAhorros();
+  await volverA('#ahorros');
 });
 
 // ---------- Suscripciones ----------
@@ -750,7 +803,6 @@ function openSubForm(s) {
   subForm.scrollIntoView({ behavior: motion(), block: 'start' });
 }
 function closeSubForm() { subForm.hidden = true; $('#sub-nueva').hidden = false; editSub = null; dirty = false; }
-const backToSubs = async () => { await reload(); history.replaceState(null, '', '#suscripciones'); route(); };
 
 montoVivo(subForm.monto);
 $('#sub-cancelar').addEventListener('click', () => leave('#suscripciones'));
@@ -762,18 +814,18 @@ subForm.addEventListener('submit', busy(async () => {
   const s = { id: editSub?.id || newId(), nombre, monto, moneda: subForm.moneda.value, dia, cardId: subForm.cardId.value || null };
   if (!checkSub(s)) return alert('Revisá los datos de la suscripción.');
   await put('subscriptions', s);
-  await backToSubs();
+  await volverA('#suscripciones');
 }));
 $('#sub-borrar').addEventListener('click', async () => {
   if (!editSub || !confirm(`¿Borrar la suscripción a ${editSub.nombre}? Los gastos ya cargados se mantienen.`)) return;
   await del('subscriptions', editSub.id);
-  await backToSubs();
+  await volverA('#suscripciones');
 });
 $('#subs-cargar').addEventListener('click', async () => {
   const pend = subPendientes(subs, txs, today());
-  if (!pend.length || !confirm(`Se cargan como gastos: ${pend.map(t => `${t.descripcion} ${money(t.monto, t.moneda)}`).join(', ')}. ¿Seguimos?`)) return;
+  if (!pend.length || !confirm(`Se cargan como gastos: ${pend.map(t => `${t.descripcion} del ${fmtDate(t.fecha)} ${money(t.monto, t.moneda)}`).join(', ')}. ¿Seguimos?`)) return;
   await txWrite(pend);
-  await backToSubs();
+  await volverA('#suscripciones');
 });
 
 // ---------- Ingresos ----------
@@ -806,7 +858,7 @@ function repiteHint() {
     : '';
 }
 function repiteTxt(i, cur) {
-  const fecha = `${fmtDate(i.fecha)} ${i.fecha.slice(0, 4)}`, ini = ym(i.fecha), k = monthRange(ini, cur).length - 1; // k: meses desde el primero (-1 = todavía no empezó)
+  const fecha = fmtDate(i.fecha, true), ini = ym(i.fecha), k = monthRange(ini, cur).length - 1; // k: meses desde el primero (-1 = todavía no empezó)
   if (i.meses === undefined) return fecha;
   if (i.meses === 0) return `Fijo, todos los meses desde ${monthName(ini)}`;
   if (k < 0) return `${i.meses} meses, empieza en ${monthName(ini)}`;
@@ -814,7 +866,6 @@ function repiteTxt(i, cur) {
   const faltan = i.meses - k - 1;
   return `Cobro ${k + 1} de ${i.meses} · ${faltan ? `faltan ${money(sum(Array(faltan).fill(i.monto)), i.moneda)}` : 'el último'}`;
 }
-const backToIngresos = async () => { await reload(); history.replaceState(null, '', '#ingresos'); route(); };
 
 montoVivo(incForm.monto);
 incForm.addEventListener('input', repiteHint);
@@ -829,12 +880,12 @@ incForm.addEventListener('submit', busy(async () => {
     ...(rep === 'fijo' && { meses: 0 }), ...(rep === 'meses' && { meses: n }) };
   if (!checkIncome(i)) return alert('Revisá los datos: elegí una fecha.');
   await put('incomes', i);
-  await backToIngresos();
+  await volverA('#ingresos');
 }));
 $('#ingreso-borrar').addEventListener('click', async () => {
   if (!editIncome || !confirm(`¿Borrar el ingreso “${editIncome.descripcion}”?`)) return;
   await del('incomes', editIncome.id);
-  await backToIngresos();
+  await volverA('#ingresos');
 });
 
 // ---------- Datos: backup, ejemplo, borrar ----------
@@ -862,6 +913,7 @@ $('#importar').addEventListener('change', async e => {
   if (!confirm(`Esto reemplaza todos tus datos por los del backup: ${data.cards.length} tarjetas, ${data.transactions.length} gastos, ${data.savings.length} ahorros, ${data.incomes.length} ingresos y ${data.subscriptions.length} suscripciones. ¿Seguimos?`)) return;
   await save(data, true);
   await reload();
+  await limpiarRetiros();
   alert('Backup importado.');
   route();
 });
@@ -888,6 +940,7 @@ try { await reload(); } catch (err) {
   $('main').innerHTML = `<p class="empty">No se pudieron abrir tus datos (${esc(err?.message ?? err)}). Cerrá la app y volvé a abrirla.</p>`;
   throw err;
 }
+await limpiarRetiros();
 route();
 addEventListener('hashchange', onHashChange);
 // Al cambiar claro/oscuro se redibujan los gráficos de la sección abierta (sin moverte ni tocar formularios).

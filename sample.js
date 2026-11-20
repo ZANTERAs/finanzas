@@ -2,8 +2,8 @@
 import { today } from './calc.js';
 
 const CARDS = [
-  { id: 'demo-galicia', banco: 'Galicia', red: 'Visa', tipo: 'credito', ultimos4: '4521', color: '#f37021' },
-  { id: 'demo-santander', banco: 'Santander', red: 'Mastercard', tipo: 'credito', ultimos4: '8830', color: '#ec0000' },
+  { id: 'demo-galicia', banco: 'Galicia', red: 'Visa', tipo: 'credito', ultimos4: '4521', color: '#f37021', cierre: 22 },
+  { id: 'demo-santander', banco: 'Santander', red: 'Mastercard', tipo: 'credito', ultimos4: '8830', color: '#ec0000', cierre: 25 },
   { id: 'demo-bbva', banco: 'BBVA', red: 'American Express', tipo: 'credito', ultimos4: '1007', color: '#004481' },
 ];
 const GASTOS = [

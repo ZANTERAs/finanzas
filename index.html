@@ -53,7 +53,7 @@
   </div>
 
   <!-- Hojas: se abren encima de la página (una sola a la vez) y se cierran con "Atrás" -->
-  <section class="sheet" data-view="gastos" role="dialog" aria-modal="true" aria-labelledby="h-gastos" hidden>
+  <section class="sheet" data-view="gastos" role="dialog" aria-labelledby="h-gastos" hidden>
     <h1 id="h-gastos" tabindex="-1">Gastos</h1>
     <!-- data-filtro: cambiar un filtro no cuenta como "cambios sin guardar" -->
     <form id="filtros" autocomplete="off" data-filtro>
@@ -77,7 +77,7 @@
     </form>
     <div class="stats">
       <div class="stat"><span>Total</span><strong id="g-total"></strong></div>
-      <div class="stat"><span>Gastos</span><strong id="g-cant"></strong></div>
+      <div class="stat"><span>Gastos</span><strong id="g-cant" aria-live="polite"></strong></div>
       <div class="stat"><span id="g-cuotas-label">Cuotas del mes</span><strong id="g-cuotas"></strong></div>
       <div class="stat"><span>Sin cuotas</span><strong id="g-contado"></strong></div>
     </div>
@@ -95,12 +95,12 @@
     </div>
   </section>
 
-  <section class="sheet" data-view="movimientos" role="dialog" aria-modal="true" aria-labelledby="h-movimientos" hidden>
+  <section class="sheet" data-view="movimientos" role="dialog" aria-labelledby="h-movimientos" hidden>
     <h1 id="h-movimientos" tabindex="-1">Últimos movimientos</h1>
     <div class="box"><ul class="list" id="movimientos-lista"></ul></div>
   </section>
 
-  <section class="sheet" data-view="categorias" role="dialog" aria-modal="true" aria-labelledby="h-categorias" hidden>
+  <section class="sheet" data-view="categorias" role="dialog" aria-labelledby="h-categorias" hidden>
     <h1 id="h-categorias" tabindex="-1">Por categoría</h1>
     <p class="eyebrow sheet-sub" id="cat-mes"></p>
     <div class="box">
@@ -112,7 +112,7 @@
     </div>
   </section>
 
-  <section class="sheet" data-view="cuotas" role="dialog" aria-modal="true" aria-labelledby="h-cuotas" hidden>
+  <section class="sheet" data-view="cuotas" role="dialog" aria-labelledby="h-cuotas" hidden>
     <h1 id="h-cuotas" tabindex="-1">Cuotas</h1>
     <div class="stats">
       <div class="stat"><span>A pagar este mes</span><strong id="cuotas-mes"></strong></div>
@@ -121,7 +121,7 @@
     <div class="box"><ul class="list" id="cuotas-lista"></ul></div>
   </section>
 
-  <section class="sheet" data-view="suscripciones" role="dialog" aria-modal="true" aria-labelledby="h-suscripciones" hidden>
+  <section class="sheet" data-view="suscripciones" role="dialog" aria-labelledby="h-suscripciones" hidden>
     <h1 id="h-suscripciones" tabindex="-1">Suscripciones</h1>
     <header class="hero">
       <p class="big" id="subs-total"></p>
@@ -138,14 +138,14 @@
         <label><input type="radio" name="moneda" value="ARS" checked><span>Pesos ($)</span></label>
         <label><input type="radio" name="moneda" value="USD"><span>Dólares (US$)</span></label>
       </fieldset>
-      <label>Monto por mes <input name="monto" inputmode="decimal" placeholder="$ 0" required></label>
+      <label>Monto por mes <input name="monto" inputmode="decimal" placeholder="Ej.: 15.000…" required></label>
       <div class="row">
         <label>Día de cobro <input type="number" name="dia" min="1" max="31" inputmode="numeric" required></label>
         <label>Se paga con <select name="cardId"></select></label>
       </div>
       <div class="row">
         <button class="btn" type="button" id="sub-cancelar">Cancelar</button>
-        <button class="btn primary" type="submit">Guardar</button>
+        <button class="btn primary" type="submit">Guardar suscripción</button>
       </div>
       <button class="btn danger" type="button" id="sub-borrar" hidden>Borrar suscripción</button>
     </form>
@@ -155,7 +155,7 @@
     </div>
   </section>
 
-  <section class="sheet" data-view="consumos" role="dialog" aria-modal="true" aria-labelledby="h-consumos" hidden>
+  <section class="sheet" data-view="consumos" role="dialog" aria-labelledby="h-consumos" hidden>
     <h1 id="h-consumos" tabindex="-1">Consumos</h1>
     <header class="hero">
       <p class="big" id="consumos-total"></p>
@@ -170,7 +170,7 @@
     <div id="consumos-servicios"></div>
   </section>
 
-  <section class="sheet" data-view="ahorros" role="dialog" aria-modal="true" aria-labelledby="h-ahorros" hidden>
+  <section class="sheet" data-view="ahorros" role="dialog" aria-labelledby="h-ahorros" hidden>
     <h1 id="h-ahorros" tabindex="-1">Ahorros</h1>
     <header class="hero">
       <p class="big" id="ahorros-total"></p>
@@ -193,7 +193,7 @@
         <label><input type="radio" name="moneda" value="ARS" checked><span>Pesos ($)</span></label>
         <label><input type="radio" name="moneda" value="USD"><span>Dólares (US$)</span></label>
       </fieldset>
-      <label>Monto <input name="monto" inputmode="decimal" placeholder="$ 0" required></label>
+      <label>Monto <input name="monto" inputmode="decimal" placeholder="Ej.: 15.000…" required></label>
       <label>Categoría <input name="categoria" list="ahorro-sugeridas" maxlength="40" placeholder="Ej.: Futuro viaje…" required></label>
       <datalist id="ahorro-sugeridas"></datalist>
       <label>Nota (opcional) <input name="descripcion" maxlength="80"></label>
@@ -210,7 +210,7 @@
     </div>
   </section>
 
-  <section class="sheet" data-view="ingresos" role="dialog" aria-modal="true" aria-labelledby="h-ingresos" hidden>
+  <section class="sheet" data-view="ingresos" role="dialog" aria-labelledby="h-ingresos" hidden>
     <h1 id="h-ingresos" tabindex="-1">Ingresos</h1>
     <header class="hero">
       <p class="big" id="ingresos-total"></p>
@@ -224,7 +224,7 @@
         <label><input type="radio" name="moneda" value="ARS" checked><span>Pesos ($)</span></label>
         <label><input type="radio" name="moneda" value="USD"><span>Dólares (US$)</span></label>
       </fieldset>
-      <label>Monto <input name="monto" inputmode="decimal" placeholder="$ 0" required></label>
+      <label>Monto <input name="monto" inputmode="decimal" placeholder="Ej.: 15.000…" required></label>
       <label>Concepto <input name="descripcion" list="ingreso-sugeridos" maxlength="40" placeholder="Ej.: Sueldo…" required></label>
       <datalist id="ingreso-sugeridos"></datalist>
       <label>Se repite <select name="repite"><option value="una">Una vez</option><option value="fijo">Todos los meses (fijo)</option><option value="meses">Por unos meses</option></select></label>
@@ -243,7 +243,7 @@
     </div>
   </section>
 
-  <section class="sheet" data-view="historial" role="dialog" aria-modal="true" aria-labelledby="h-historial" hidden>
+  <section class="sheet" data-view="historial" role="dialog" aria-labelledby="h-historial" hidden>
     <h1 id="h-historial" tabindex="-1">Historial</h1>
     <div class="box">
       <h2>Gasto por mes</h2>
@@ -254,7 +254,7 @@
       <div class="stat"><span>Total del mes</span><strong id="hist-total"></strong></div>
       <div class="stat"><span id="hist-prev-label">vs mes anterior</span><strong id="hist-delta"></strong></div>
     </div>
-    <div class="box" id="hist-cat-box">
+    <div class="box">
       <h2>Por categoría</h2>
       <div class="chart-wrap"><canvas id="chart-hist-cat" role="img" aria-label="Gasto del mes por categoría"></canvas></div>
       <table class="cmp">
@@ -268,13 +268,13 @@
     </div>
   </section>
 
-  <section class="sheet" data-view="tarjetas" role="dialog" aria-modal="true" aria-labelledby="h-tarjetas" hidden>
+  <section class="sheet" data-view="tarjetas" role="dialog" aria-labelledby="h-tarjetas" hidden>
     <h1 id="h-tarjetas" tabindex="-1">Tarjetas</h1>
-    <div class="carousel" id="tarjetas-lista" translate="no" aria-label="Tus tarjetas: deslizá para cambiar"></div>
+    <div class="carousel" id="tarjetas-lista" translate="no" role="group" aria-label="Tus tarjetas: deslizá para cambiar"></div>
     <div class="dots" id="tarjetas-dots"></div>
     <div class="tiles" id="card-acciones">
       <a class="tile" id="card-editar" href="#tarjetas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg>Editar</a>
-      <a class="tile" id="card-nueva" href="#tarjetas/nueva"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Agregar</a>
+      <a class="tile" href="#tarjetas/nueva"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Agregar</a>
     </div>
     <form id="card-form" class="box" autocomplete="off" hidden>
       <h2 id="card-titulo">Nueva tarjeta</h2>
@@ -286,7 +286,11 @@
         <label><input type="radio" name="tipo" value="credito" checked><span>Crédito</span></label>
         <label><input type="radio" name="tipo" value="debito"><span>Débito</span></label>
       </fieldset>
-      <p class="muted hint">Los gastos con débito se descuentan de “Cuenta de ahorros”, como el efectivo.</p>
+      <p class="muted hint">Los gastos con débito se descuentan de “Cuenta de ahorros”. Los en efectivo, no.</p>
+      <div id="cierre-campo">
+        <label>Día de cierre del resumen (opcional) <input type="number" name="cierre" min="1" max="31" inputmode="numeric" placeholder="Ej.: 22…"></label>
+        <p class="muted hint">Lo que compres después de ese día se anota en el pago del mes siguiente, y sus cuotas arrancan ahí.</p>
+      </div>
       <label>Últimos 4 dígitos <input name="ultimos4" inputmode="numeric" spellcheck="false" pattern="[0-9]{4}" maxlength="4" placeholder="1234" required></label>
       <p class="muted hint">Solo los últimos 4. Nunca cargues el número completo.</p>
       <label>Color <input type="color" name="color" value="#555555"></label>
@@ -305,7 +309,7 @@
     <button class="btn danger" type="button" id="borrar-todo">Borrar todos los datos</button>
   </section>
 
-  <section class="sheet" data-view="nuevo" role="dialog" aria-modal="true" aria-labelledby="nuevo-titulo" hidden>
+  <section class="sheet" data-view="nuevo" role="dialog" aria-labelledby="nuevo-titulo" hidden>
     <h1 id="nuevo-titulo" tabindex="-1">Nuevo gasto</h1>
     <form id="tx-form" autocomplete="off">
       <details class="box factura" id="factura">
@@ -328,13 +332,13 @@
           <label><input type="radio" name="moneda" value="ARS" checked><span>$ARS</span></label>
           <label><input type="radio" name="moneda" value="USD"><span>$USD</span></label>
         </fieldset>
-        <label>Monto <input name="monto" inputmode="decimal" placeholder="0" required></label>
+        <label>Monto <input name="monto" inputmode="decimal" placeholder="15.000…" required></label>
       </div>
       <label>Descripción <input name="descripcion" maxlength="80" required></label>
       <label>Categoría <select name="categoria"></select></label>
       <div class="row" id="consumo-row" hidden>
-        <label>Consumo <span id="consumo-unidad"></span><input name="consumo" inputmode="decimal" placeholder="Ej.: 250"></label>
-        <label>Lectura del medidor <input name="lectura" inputmode="decimal" placeholder="Opcional"></label>
+        <label>Consumo <span id="consumo-unidad"></span><input name="consumo" inputmode="decimal" placeholder="Ej.: 250…"></label>
+        <label>Lectura del medidor <input name="lectura" inputmode="decimal" placeholder="Ej.: 10.500…"></label>
       </div>
       <div class="row">
         <label>Fecha <input type="date" name="fecha" min="2000-01-01" required></label>
